@@ -781,3 +781,103 @@ fn test_no_event_on_renewal_error() {
     let events_after = env.events().all().len();
     assert_eq!(events_before, events_after);
 }
+
+// ── Issuer Registry Events Unit Tests (Tasks 3.1–3.4) ────────────────────────
+// Requirements: 4.1, 4.2, 4.3
+
+#[test]
+fn test_register_issuer_emits_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let (contract_id, client) = create_test_contract(&env);
+
+    client.initialize(&admin);
+    client.register_issuer(&admin, &issuer);
+
+    let events = env.events().all();
+    // Find the iss_reg event (last event should be it)
+    let (_, topics, data) = events.last().unwrap();
+
+    let topic0: soroban_sdk::Symbol = soroban_sdk::TryFromVal::try_from_val(&env, &topics.get(0).unwrap()).unwrap();
+    let topic1: Address = soroban_sdk::TryFromVal::try_from_val(&env, &topics.get(1).unwrap()).unwrap();
+    let event_data: Address = soroban_sdk::TryFromVal::try_from_val(&env, &data).unwrap();
+
+    assert_eq!(topic0, soroban_sdk::symbol_short!("iss_reg"));
+    assert_eq!(topic1, issuer);
+    assert_eq!(event_data, admin);
+
+    let _ = contract_id;
+}
+
+#[test]
+fn test_remove_issuer_emits_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let (contract_id, client) = create_test_contract(&env);
+
+    client.initialize(&admin);
+    client.register_issuer(&admin, &issuer);
+    client.remove_issuer(&admin, &issuer);
+
+    let events = env.events().all();
+    let (_, topics, data) = events.last().unwrap();
+
+    let topic0: soroban_sdk::Symbol = soroban_sdk::TryFromVal::try_from_val(&env, &topics.get(0).unwrap()).unwrap();
+    let topic1: Address = soroban_sdk::TryFromVal::try_from_val(&env, &topics.get(1).unwrap()).unwrap();
+    let event_data: Address = soroban_sdk::TryFromVal::try_from_val(&env, &data).unwrap();
+
+    assert_eq!(topic0, soroban_sdk::symbol_short!("iss_rem"));
+    assert_eq!(topic1, issuer);
+    assert_eq!(event_data, admin);
+
+    let _ = contract_id;
+}
+
+#[test]
+fn test_register_issuer_error_no_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let wrong_admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let (_, client) = create_test_contract(&env);
+
+    client.initialize(&admin);
+
+    let events_before = env.events().all().len();
+
+    // wrong_admin is not the real admin — should fail with Unauthorized
+    let _ = client.try_register_issuer(&wrong_admin, &issuer);
+
+    let events_after = env.events().all().len();
+    assert_eq!(events_before, events_after);
+}
+
+#[test]
+fn test_remove_issuer_error_no_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let wrong_admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let (_, client) = create_test_contract(&env);
+
+    client.initialize(&admin);
+    client.register_issuer(&admin, &issuer);
+
+    let events_before = env.events().all().len();
+
+    // wrong_admin is not the real admin — should fail with Unauthorized
+    let _ = client.try_remove_issuer(&wrong_admin, &issuer);
+
+    let events_after = env.events().all().len();
+    assert_eq!(events_before, events_after);
+}

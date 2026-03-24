@@ -408,13 +408,15 @@ data: (attestation_id, new_expiration)
 **IssuerRegistered:**
 ```rust
 topics: ["iss_reg", issuer_address]
-data: admin_address
+data: (admin_address, timestamp)
 ```
 
 **IssuerRemoved:**
 ```rust
 topics: ["iss_rem", issuer_address]
-data: admin_address
+data: (admin_address, timestamp)
+```
+
 **ClaimTypeRegistered:**
 ```rust
 topics: ["clmtype"]

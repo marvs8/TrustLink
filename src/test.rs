@@ -79,6 +79,79 @@ fn test_register_and_remove_issuer() {
 }
 
 #[test]
+fn test_register_issuer_emits_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, client) = create_test_contract(&env);
+    let admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let timestamp = 1234567890u64;
+    env.ledger().set_timestamp(timestamp);
+
+    client.initialize(&admin);
+    client.register_issuer(&admin, &issuer);
+
+    let events = env.events().all();
+    assert!(!events.is_empty());
+    
+    // Find the issuer_registered event
+    let mut found_event = false;
+    for (_, topic, data) in events {
+        let topic0: soroban_sdk::Symbol =
+            soroban_sdk::TryFromVal::try_from_val(&env, &topic.get(0).unwrap()).unwrap();
+        if topic0 == soroban_sdk::symbol_short!("iss_reg") {
+            let topic1: Address =
+                soroban_sdk::TryFromVal::try_from_val(&env, &topic.get(1).unwrap()).unwrap();
+            let event_data: (Address, u64) =
+                soroban_sdk::TryFromVal::try_from_val(&env, &data).unwrap();
+            
+            assert_eq!(topic1, issuer);
+            assert_eq!(event_data.0, admin);
+            assert_eq!(event_data.1, timestamp);
+            found_event = true;
+            break;
+        }
+    }
+    assert!(found_event, "issuer_registered event not found");
+}
+
+#[test]
+fn test_remove_issuer_emits_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, issuer, client) = setup(&env);
+    let timestamp = 1234567890u64;
+    env.ledger().set_timestamp(timestamp);
+
+    client.remove_issuer(&admin, &issuer);
+
+    let events = env.events().all();
+    assert!(!events.is_empty());
+    
+    // Find the issuer_removed event
+    let mut found_event = false;
+    for (_, topic, data) in events {
+        let topic0: soroban_sdk::Symbol =
+            soroban_sdk::TryFromVal::try_from_val(&env, &topic.get(0).unwrap()).unwrap();
+        if topic0 == soroban_sdk::symbol_short!("iss_rem") {
+            let topic1: Address =
+                soroban_sdk::TryFromVal::try_from_val(&env, &topic.get(1).unwrap()).unwrap();
+            let event_data: (Address, u64) =
+                soroban_sdk::TryFromVal::try_from_val(&env, &data).unwrap();
+            
+            assert_eq!(topic1, issuer);
+            assert_eq!(event_data.0, admin);
+            assert_eq!(event_data.1, timestamp);
+            found_event = true;
+            break;
+        }
+    }
+    assert!(found_event, "issuer_removed event not found");
+}
+
+#[test]
 fn test_register_bridge_is_admin_only() {
     let env = Env::default();
     env.mock_all_auths();

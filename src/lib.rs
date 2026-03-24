@@ -141,7 +141,7 @@ impl TrustLinkContract {
         admin.require_auth();
         Validation::require_admin(&env, &admin)?;
         Storage::add_issuer(&env, &issuer);
-        Events::issuer_registered(&env, &issuer, &admin);
+        Events::issuer_registered(&env, &issuer, &admin, env.ledger().timestamp());
         Ok(())
     }
 
@@ -149,7 +149,7 @@ impl TrustLinkContract {
         admin.require_auth();
         Validation::require_admin(&env, &admin)?;
         Storage::remove_issuer(&env, &issuer);
-        Events::issuer_removed(&env, &issuer, &admin);
+        Events::issuer_removed(&env, &issuer, &admin, env.ledger().timestamp());
         Ok(())
     }
 

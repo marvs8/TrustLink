@@ -1,4 +1,26 @@
 //! Event emission for TrustLink.
+//!
+//! Every state-changing operation in the contract publishes a structured event
+//! so that off-chain indexers, dApps, and other contracts can react to changes
+//! without polling storage.
+//!
+//! All helpers are collected on the zero-size [`Events`] struct. Each method
+//! takes `&Env` plus the data relevant to that event and calls
+//! `env.events().publish(topics, data)`.
+//!
+//! ## Event catalogue
+//!
+//! | Method                  | Symbol       | Topics                    | Data                                      |
+//! |-------------------------|--------------|---------------------------|-------------------------------------------|
+//! | `admin_initialized`     | `admin_init` | `(symbol,)`               | `(admin: Address, timestamp: u64)`        |
+//! | `attestation_created`   | `created`    | `(symbol, subject)`       | `(id, issuer, claim_type, timestamp)`     |
+//! | `attestation_revoked`   | `revoked`    | `(symbol, issuer)`        | `attestation_id`                          |
+//! | `attestation_renewed`   | `renewed`    | `(symbol, issuer)`        | `(attestation_id, new_expiration)`        |
+//! | `attestation_updated`   | `updated`    | `(symbol, issuer)`        | `(attestation_id, new_expiration)`        |
+//! | `attestation_expired`   | `expired`    | `(symbol, subject)`       | `attestation_id`                          |
+//! | `issuer_registered`     | `iss_reg`    | `(symbol, issuer)`        | `admin`                                   |
+//! | `issuer_removed`        | `iss_rem`    | `(symbol, issuer)`        | `admin`                                   |
+//! | `claim_type_registered` | `clmtype`    | `(symbol,)`               | `(claim_type, description)`               |
 
 use soroban_sdk::{symbol_short, Address, Env, String};
 use crate::types::Attestation;

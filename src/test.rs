@@ -1653,6 +1653,232 @@ fn test_has_any_claim_single_element_equivalence_with_has_valid_claim() {
     );
 }
 
+// ── has_all_claims Unit Tests ─────────────────────────────────────────────────
+
+#[test]
+fn test_has_all_claims_empty_list_returns_true() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let (_, client) = create_test_contract(&env);
+    client.initialize(&admin);
+
+    let subject = Address::generate(&env);
+    let empty: soroban_sdk::Vec<String> = soroban_sdk::Vec::new(&env);
+    // Vacuous truth: no claims required → always true
+    assert!(client.has_all_claims(&subject, &empty));
+}
+
+#[test]
+fn test_has_all_claims_all_valid_returns_true() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let subject = Address::generate(&env);
+    let (_, client) = create_test_contract(&env);
+
+    client.initialize(&admin);
+    client.register_issuer(&admin, &issuer);
+
+    let kyc = String::from_str(&env, "KYC_PASSED");
+    let acc = String::from_str(&env, "ACCREDITED_INVESTOR");
+    client.create_attestation(&issuer, &subject, &kyc, &None, &None);
+    client.create_attestation(&issuer, &subject, &acc, &None, &None);
+
+    let mut list = soroban_sdk::Vec::new(&env);
+    list.push_back(kyc);
+    list.push_back(acc);
+
+    assert!(client.has_all_claims(&subject, &list));
+}
+
+#[test]
+fn test_has_all_claims_one_missing_returns_false() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let subject = Address::generate(&env);
+    let (_, client) = create_test_contract(&env);
+
+    client.initialize(&admin);
+    client.register_issuer(&admin, &issuer);
+
+    let kyc = String::from_str(&env, "KYC_PASSED");
+    client.create_attestation(&issuer, &subject, &kyc, &None, &None);
+    // ACCREDITED_INVESTOR is never issued
+
+    let mut list = soroban_sdk::Vec::new(&env);
+    list.push_back(kyc);
+    list.push_back(String::from_str(&env, "ACCREDITED_INVESTOR"));
+
+    assert!(!client.has_all_claims(&subject, &list));
+}
+
+#[test]
+fn test_has_all_claims_one_revoked_returns_false() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let subject = Address::generate(&env);
+    let (_, client) = create_test_contract(&env);
+
+    client.initialize(&admin);
+    client.register_issuer(&admin, &issuer);
+
+    let kyc = String::from_str(&env, "KYC_PASSED");
+    let acc = String::from_str(&env, "ACCREDITED_INVESTOR");
+    let kyc_id = client.create_attestation(&issuer, &subject, &kyc, &None, &None);
+    client.create_attestation(&issuer, &subject, &acc, &None, &None);
+
+    // Revoke KYC
+    client.revoke_attestation(&issuer, &kyc_id);
+
+    let mut list = soroban_sdk::Vec::new(&env);
+    list.push_back(kyc);
+    list.push_back(acc);
+
+    assert!(!client.has_all_claims(&subject, &list));
+}
+
+#[test]
+fn test_has_all_claims_one_expired_returns_false() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let subject = Address::generate(&env);
+    let (_, client) = create_test_contract(&env);
+
+    client.initialize(&admin);
+    client.register_issuer(&admin, &issuer);
+
+    let current_time: u64 = 1_000;
+    env.ledger().with_mut(|l| l.timestamp = current_time);
+
+    let kyc = String::from_str(&env, "KYC_PASSED");
+    let acc = String::from_str(&env, "ACCREDITED_INVESTOR");
+    // KYC expires soon, ACCREDITED does not
+    client.create_attestation(&issuer, &subject, &kyc, &Some(current_time + 100), &None);
+    client.create_attestation(&issuer, &subject, &acc, &None, &None);
+
+    // Advance past KYC expiration
+    env.ledger().with_mut(|l| l.timestamp = current_time + 200);
+
+    let mut list = soroban_sdk::Vec::new(&env);
+    list.push_back(kyc);
+    list.push_back(acc);
+
+    assert!(!client.has_all_claims(&subject, &list));
+}
+
+#[test]
+fn test_has_all_claims_one_pending_returns_false() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let subject = Address::generate(&env);
+    let (_, client) = create_test_contract(&env);
+
+    client.initialize(&admin);
+    client.register_issuer(&admin, &issuer);
+
+    let current_time: u64 = 1_000;
+    env.ledger().with_mut(|l| l.timestamp = current_time);
+
+    let kyc = String::from_str(&env, "KYC_PASSED");
+    let acc = String::from_str(&env, "ACCREDITED_INVESTOR");
+    // KYC is pending (valid_from in the future)
+    client.create_attestation(&issuer, &subject, &kyc, &None, &Some(current_time + 500));
+    client.create_attestation(&issuer, &subject, &acc, &None, &None);
+
+    let mut list = soroban_sdk::Vec::new(&env);
+    list.push_back(kyc);
+    list.push_back(acc);
+
+    assert!(!client.has_all_claims(&subject, &list));
+}
+
+#[test]
+fn test_has_all_claims_no_attestations_returns_false() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let (_, client) = create_test_contract(&env);
+    client.initialize(&admin);
+
+    let subject = Address::generate(&env);
+    let mut list = soroban_sdk::Vec::new(&env);
+    list.push_back(String::from_str(&env, "KYC_PASSED"));
+
+    assert!(!client.has_all_claims(&subject, &list));
+}
+
+#[test]
+fn test_has_all_claims_single_valid_returns_true() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let subject = Address::generate(&env);
+    let (_, client) = create_test_contract(&env);
+
+    client.initialize(&admin);
+    client.register_issuer(&admin, &issuer);
+
+    let kyc = String::from_str(&env, "KYC_PASSED");
+    client.create_attestation(&issuer, &subject, &kyc, &None, &None);
+
+    let mut list = soroban_sdk::Vec::new(&env);
+    list.push_back(kyc.clone());
+
+    // Single-element list must agree with has_valid_claim
+    assert_eq!(
+        client.has_all_claims(&subject, &list),
+        client.has_valid_claim(&subject, &kyc)
+    );
+}
+
+#[test]
+fn test_has_all_claims_short_circuits_on_first_missing() {
+    // Verifies short-circuit: put the missing claim first so the function
+    // would have to scan further to find the valid ones if it didn't stop early.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let subject = Address::generate(&env);
+    let (_, client) = create_test_contract(&env);
+
+    client.initialize(&admin);
+    client.register_issuer(&admin, &issuer);
+
+    let kyc = String::from_str(&env, "KYC_PASSED");
+    let acc = String::from_str(&env, "ACCREDITED_INVESTOR");
+    let mer = String::from_str(&env, "MERCHANT_VERIFIED");
+    // Only issue the last two; the first is missing
+    client.create_attestation(&issuer, &subject, &acc, &None, &None);
+    client.create_attestation(&issuer, &subject, &mer, &None, &None);
+
+    let mut list = soroban_sdk::Vec::new(&env);
+    list.push_back(kyc);   // missing — should short-circuit here
+    list.push_back(acc);
+    list.push_back(mer);
+
+    assert!(!client.has_all_claims(&subject, &list));
+
 // ── Batch attestation creation tests ─────────────────────────────────────────
 
 #[test]
@@ -1852,4 +2078,5 @@ fn test_create_attestations_batch_updates_subject_and_issuer_indexes() {
     // Issuer index should have one entry
     let issuer_attestations = client.get_issuer_attestations(&issuer, &0, &10);
     assert_eq!(issuer_attestations.len(), 1);
+
 }

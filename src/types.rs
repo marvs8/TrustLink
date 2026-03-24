@@ -1,3 +1,39 @@
+//! Shared data types, error codes, and core attestation logic for TrustLink.
+//!
+//! ## Types
+//!
+//! - [`Attestation`] — the primary on-chain record. Stores the issuer, subject,
+//!   claim type, creation timestamp, optional expiration, optional `valid_from`,
+//!   and revocation flag. Its [`Attestation::generate_id`] method produces a
+//!   deterministic 32-character hex ID from a SHA-256 hash of the key fields,
+//!   and [`Attestation::get_status`] computes the current [`AttestationStatus`]
+//!   from the ledger timestamp.
+//! - [`AttestationStatus`] — four-variant enum: `Pending`, `Valid`, `Expired`,
+//!   `Revoked`. Priority order: Pending > Revoked > Expired > Valid.
+//! - [`IssuerMetadata`] — optional public profile an issuer can attach to their
+//!   address (name, URL, description).
+//! - [`ClaimTypeInfo`] — a registered claim type identifier paired with a
+//!   human-readable description.
+//! - [`ContractMetadata`] — static contract info (name, version, description)
+//!   returned by `get_contract_metadata`.
+//!
+//! ## Error codes
+//!
+//! [`Error`] is a `#[contracterror]` enum whose `u32` discriminants are the
+//! values surfaced to callers as `Error(Contract, #N)`:
+//!
+//! | # | Variant                | When raised                                      |
+//! |---|------------------------|--------------------------------------------------|
+//! | 1 | `AlreadyInitialized`   | `initialize` called a second time                |
+//! | 2 | `NotInitialized`       | Any call before `initialize`                     |
+//! | 3 | `Unauthorized`         | Caller is not admin or not a registered issuer   |
+//! | 4 | `NotFound`             | Attestation ID does not exist in storage         |
+//! | 5 | `DuplicateAttestation` | ID collision (same inputs at same timestamp)     |
+//! | 6 | `AlreadyRevoked`       | Attempt to revoke or renew an already-revoked attestation |
+//! | 7 | `Expired`              | Reserved                                         |
+//! | 8 | `InvalidValidFrom`     | `valid_from` ≤ current ledger timestamp          |
+//! | 9 | `InvalidExpiration`    | New expiration ≤ current ledger timestamp        |
+
 use soroban_sdk::{contracterror, contracttype, Address, Env, String};
 
 /// Contract metadata returned by `get_contract_metadata`.

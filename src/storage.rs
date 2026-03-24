@@ -1,8 +1,29 @@
 //! Storage helpers for TrustLink.
 //!
-//! All persistent data uses a 30-day TTL that is refreshed on every write.
-//! Instance storage (admin) shares a single TTL entry; persistent storage
-//! (issuers, attestations, indexes) each have their own TTL entry.
+//! This module is the single point of contact between the contract logic and
+//! on-chain storage. No other module calls `env.storage()` directly.
+//!
+//! ## Storage tiers
+//!
+//! | Tier         | Keys stored                          | TTL policy                        |
+//! |--------------|--------------------------------------|-----------------------------------|
+//! | Instance     | `Admin`, `Version`                   | Refreshed to 30 days on each write|
+//! | Persistent   | Everything else (see [`StorageKey`]) | Refreshed to 30 days on each write|
+//!
+//! ## Key layout (`StorageKey`)
+//!
+//! - `Admin` — the single contract administrator address.
+//! - `Version` — semver string set at initialization (e.g. `"1.0.0"`).
+//! - `Issuer(Address)` — presence flag (`bool`) for each registered issuer.
+//! - `Attestation(String)` — full [`Attestation`] record keyed by its ID.
+//! - `SubjectAttestations(Address)` — ordered `Vec<String>` of attestation IDs
+//!   for a given subject; used for pagination and claim lookups.
+//! - `IssuerAttestations(Address)` — ordered `Vec<String>` of attestation IDs
+//!   created by a given issuer.
+//! - `IssuerMetadata(Address)` — optional [`IssuerMetadata`] set by the issuer.
+//! - `ClaimType(String)` — [`ClaimTypeInfo`] record for a registered claim type.
+//! - `ClaimTypeList` — ordered `Vec<String>` of all registered claim type IDs;
+//!   used for pagination via `list_claim_types`.
 
 use soroban_sdk::{contracttype, Address, Env, String, Vec};
 use crate::types::{Attestation, ClaimTypeInfo, Error, IssuerMetadata};

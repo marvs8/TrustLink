@@ -15,7 +15,7 @@ impl Events {
     /// # Event schema
     /// ```text
     /// topics: ("created", subject: Address)
-    /// data:   (attestation_id: String, issuer: Address, claim_type: String, timestamp: u64)
+    /// data:   (attestation_id: String, issuer: Address, claim_type: String, timestamp: u64, metadata: Option<String>)
     /// ```
     ///
     /// # Parameters
@@ -28,6 +28,7 @@ impl Events {
                 attestation.issuer.clone(),
                 attestation.claim_type.clone(),
                 attestation.timestamp,
+                attestation.metadata.clone(),
             ),
         );
     }
@@ -50,11 +51,14 @@ impl Events {
         );
     }
 
-    /// Emit event when an attestation is renewed
+    /// Emit event when an attestation is renewed.
     pub fn attestation_renewed(env: &Env, attestation_id: &String, issuer: &Address, new_expiration: Option<u64>) {
         env.events().publish(
             (symbol_short!("renewed"), issuer.clone()),
             (attestation_id.clone(), new_expiration),
+        );
+    }
+
     /// Emit an event when an expired attestation is encountered during a check.
     ///
     /// This event is **not** emitted for revoked attestations; revocation takes

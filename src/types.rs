@@ -1,10 +1,12 @@
-//! Shared data types and error definitions for TrustLink.
+//! Shared data types for TrustLink.
 //!
-//! Defines [`Attestation`], [`AttestationStatus`], [`Error`], and supporting
-//! structs used throughout the contract. All types are annotated with
-//! `#[contracttype]` or `#[contracterror]` for Soroban ABI compatibility.
+//! Defines [`Attestation`], [`AttestationStatus`], and supporting structs used
+//! throughout the contract. All types are annotated with `#[contracttype]` for
+//! Soroban ABI compatibility. Error definitions live in [`crate::errors`].
 
-use soroban_sdk::{contracterror, contracttype, xdr::ToXdr, Address, Bytes, Env, String, Vec};
+use soroban_sdk::{contracttype, xdr::ToXdr, Address, Bytes, Env, String, Vec};
+
+pub use crate::errors::Error;
 
 /// Default lifetime for a multi-sig proposal: 7 days in seconds.
 pub const MULTISIG_PROPOSAL_TTL_SECS: u64 = 7 * 24 * 60 * 60;
@@ -125,39 +127,6 @@ pub struct MultiSigProposal {
     pub expires_at: u64,
     /// Whether the proposal has been finalized into an active attestation.
     pub finalized: bool,
-}
-
-#[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum Error {
-    AlreadyInitialized = 1,
-    NotInitialized = 2,
-    /// Caller lacks required permissions. Includes rejection when `issuer` equals `subject` in `create_attestation`.
-    Unauthorized = 3,
-    NotFound = 4,
-    DuplicateAttestation = 5,
-    AlreadyRevoked = 6,
-    Expired = 7,
-    InvalidValidFrom = 8,
-    InvalidExpiration = 9,
-    MetadataTooLong = 10,
-    InvalidTimestamp = 11,
-    InvalidFee = 12,
-    FeeTokenRequired = 13,
-    TooManyTags = 14,
-    TagTooLong = 15,
-    /// Threshold must be >= 1 and <= number of required signers.
-    InvalidThreshold = 16,
-    /// The signer is not in the proposal's required_signers list.
-    NotRequiredSigner = 17,
-    /// The signer has already co-signed this proposal.
-    AlreadySigned = 18,
-    /// The proposal has already been finalized.
-    ProposalFinalized = 19,
-    /// The proposal has expired without reaching threshold.
-    ProposalExpired = 20,
-    /// The revocation reason exceeds the maximum allowed length of 128 characters.
-    ReasonTooLong = 21,
 }
 
 impl Attestation {

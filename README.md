@@ -620,6 +620,91 @@ For a step-by-step walkthrough covering Rust cross-contract patterns, JavaScript
 
 For a full reference of every on-chain storage key, the data each holds, TTL policy, serialization format, and a practical RPC read example for indexer developers, see [docs/storage-layout.md](docs/storage-layout.md).
 
+## FAQ
+
+**How do I verify an attestation in my contract?**
+
+Use `has_valid_claim` for a simple boolean check, or `get_attestation` if you need the full record. The client is generated from the TrustLink contract ABI — see the [Integration Example](#integration-example) above for a complete pattern.
+
+```rust
+let trustlink = TrustLinkContractClient::new(&env, &trustlink_contract_id);
+
+// Boolean — cheapest option for a gate check
+if !trustlink.has_valid_claim(&user, &String::from_str(&env, "KYC_PASSED")) {
+    return Err(Error::KYCRequired);
+}
+
+// Full record — use when you need issuer, timestamp, metadata, etc.
+let attestation = trustlink.get_attestation(&attestation_id);
+```
+
+For issuer-specific trust, use `has_valid_claim_from_issuer`. For multi-claim gates, use `has_any_claim` (OR) or `has_all_claims` (AND).
+
+---
+
+**What happens when an issuer is removed?**
+
+Removing an issuer with `remove_issuer` deregisters them from the issuer registry — they can no longer call `create_attestation` or `revoke_attestation`. However, all attestations they previously issued remain on-chain and continue to be queryable and valid (subject to their own expiration/revocation status). Existing attestations are never deleted when an issuer is removed.
+
+If you need to invalidate all attestations from a removed issuer, you must revoke them individually before removing the issuer, while they still have the authority to do so.
+
+---
+
+**Can a subject dispute an attestation?**
+
+Not directly — TrustLink is an issuer-controlled system. Only the issuer who created an attestation can revoke it. Subjects have no on-chain mechanism to dispute or remove an attestation about themselves.
+
+If your use case requires subject consent or dispute resolution, the recommended pattern is to build a wrapper contract that enforces subject approval before calling `create_attestation`, or to use the multi-sig flow (`propose_attestation` / `cosign_attestation`) where the subject's address can be included as a required co-signer.
+
+---
+
+**How are attestation IDs generated?**
+
+IDs are a 32-byte SHA-256 hash, hex-encoded to a 64-character string. The input is the XDR serialization of four fields concatenated together:
+
+```
+SHA-256( issuer_xdr || subject_xdr || claim_type_xdr || timestamp_xdr )
+```
+
+This makes IDs deterministic and collision-resistant. Two attestations with the same issuer, subject, claim type, and ledger timestamp will produce the same ID — which is why `create_attestation` rejects duplicates with `DuplicateAttestation`. Bridge attestations use a different scheme that also folds in `source_chain` and `source_tx`. See [`src/types.rs`](src/types.rs) — `Attestation::generate_id` and `Attestation::generate_bridge_id`.
+
+---
+
+**What is the cost of creating an attestation?**
+
+By default fees are disabled (`attestation_fee: 0`). The admin can enable them with `set_fee`, specifying a token contract address, a fee amount, and a collector address. When enabled, `create_attestation` transfers exactly `attestation_fee` tokens from the issuer to the collector before storing the attestation — if the issuer's balance is insufficient the transaction fails.
+
+```rust
+// Check current fee config before issuing
+let config = trustlink.get_fee_config();
+// config.attestation_fee — amount in token's smallest unit (0 = free)
+// config.fee_token       — None when fees are disabled
+// config.fee_collector   — address that receives the fee
+```
+
+In addition to the application-level fee, every Soroban transaction pays the standard Stellar network fee (base fee + resource fee). The resource fee depends on the ledger entries read/written; a typical `create_attestation` call touches 3–4 persistent entries.
+
+---
+
+**How do I handle expired attestations?**
+
+`has_valid_claim` and `get_attestation_status` both treat expired attestations as invalid automatically — you don't need to check expiration manually. When an expired attestation is encountered during a `has_valid_claim` call, a `["expired", subject]` event is emitted so off-chain indexers can react.
+
+```rust
+// Status check — returns Valid, Expired, Revoked, or Pending
+let status = trustlink.get_attestation_status(&attestation_id);
+
+match status {
+    AttestationStatus::Expired => {
+        // Ask the issuer to renew or re-issue
+    }
+    AttestationStatus::Valid => { /* proceed */ }
+    _ => { /* handle revoked / pending */ }
+}
+```
+
+To renew an expired attestation, the original issuer calls `renew_attestation` with a new expiration timestamp. Alternatively, the issuer can create a fresh attestation — the old one stays on-chain as a historical record.
+
 ## License
 
 MIT

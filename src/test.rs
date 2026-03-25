@@ -1079,3 +1079,97 @@ fn test_revoke_reason_exactly_128_chars_accepted() {
     assert!(attestation.revoked);
     assert_eq!(attestation.revocation_reason, Some(exact_reason));
 }
+
+// ── Property-based tests: attestation ID uniqueness ──────────────────────────
+
+/// Same issuer, different subjects → different IDs.
+#[test]
+fn test_id_uniqueness_same_issuer_different_subjects() {
+    let env = Env::default();
+    let issuer = Address::generate(&env);
+    let claim_type = String::from_str(&env, "KYC_PASSED");
+    let ts = 1_000_000u64;
+
+    let id1 = types::Attestation::generate_id(&env, &issuer, &Address::generate(&env), &claim_type, ts);
+    let id2 = types::Attestation::generate_id(&env, &issuer, &Address::generate(&env), &claim_type, ts);
+    assert_ne!(id1, id2, "different subjects must produce different IDs");
+}
+
+/// Same subject, different issuers → different IDs.
+#[test]
+fn test_id_uniqueness_same_subject_different_issuers() {
+    let env = Env::default();
+    let subject = Address::generate(&env);
+    let claim_type = String::from_str(&env, "KYC_PASSED");
+    let ts = 1_000_000u64;
+
+    let id1 = types::Attestation::generate_id(&env, &Address::generate(&env), &subject, &claim_type, ts);
+    let id2 = types::Attestation::generate_id(&env, &Address::generate(&env), &subject, &claim_type, ts);
+    assert_ne!(id1, id2, "different issuers must produce different IDs");
+}
+
+/// Same issuer + subject, different claim types → different IDs.
+#[test]
+fn test_id_uniqueness_same_issuer_subject_different_claim_types() {
+    let env = Env::default();
+    let issuer = Address::generate(&env);
+    let subject = Address::generate(&env);
+    let ts = 1_000_000u64;
+
+    let id1 = types::Attestation::generate_id(&env, &issuer, &subject, &String::from_str(&env, "KYC_PASSED"), ts);
+    let id2 = types::Attestation::generate_id(&env, &issuer, &subject, &String::from_str(&env, "ACCREDITED_INVESTOR"), ts);
+    assert_ne!(id1, id2, "different claim types must produce different IDs");
+}
+
+/// Same issuer + subject + claim type, different timestamps → different IDs.
+#[test]
+fn test_id_uniqueness_same_inputs_different_timestamps() {
+    let env = Env::default();
+    let issuer = Address::generate(&env);
+    let subject = Address::generate(&env);
+    let claim_type = String::from_str(&env, "KYC_PASSED");
+
+    let id1 = types::Attestation::generate_id(&env, &issuer, &subject, &claim_type, 1_000_000);
+    let id2 = types::Attestation::generate_id(&env, &issuer, &subject, &claim_type, 1_000_001);
+    assert_ne!(id1, id2, "different timestamps must produce different IDs");
+}
+
+/// Same inputs always produce the same ID (determinism).
+#[test]
+fn test_id_determinism_same_inputs_same_id() {
+    let env = Env::default();
+    let issuer = Address::generate(&env);
+    let subject = Address::generate(&env);
+    let claim_type = String::from_str(&env, "KYC_PASSED");
+    let ts = 1_000_000u64;
+
+    let id1 = types::Attestation::generate_id(&env, &issuer, &subject, &claim_type, ts);
+    let id2 = types::Attestation::generate_id(&env, &issuer, &subject, &claim_type, ts);
+    assert_eq!(id1, id2, "identical inputs must always produce the same ID");
+}
+
+/// No collisions across 100 generated IDs (varying subjects, issuers, claim types, timestamps).
+#[test]
+fn test_id_no_collisions_across_100_combinations() {
+    let env = Env::default();
+    let claim_types = [
+        "KYC_PASSED", "ACCREDITED_INVESTOR", "MERCHANT_VERIFIED", "AML_CLEARED", "SANCTIONS_CHECKED",
+    ];
+
+    let mut ids = soroban_sdk::Vec::new(&env);
+
+    for i in 0u64..100 {
+        let issuer = Address::generate(&env);
+        let subject = Address::generate(&env);
+        let claim_type = String::from_str(&env, claim_types[(i as usize) % claim_types.len()]);
+        let ts = 1_000_000u64 + i;
+
+        let id = types::Attestation::generate_id(&env, &issuer, &subject, &claim_type, ts);
+
+        // Ensure this ID hasn't appeared before.
+        assert!(!ids.contains(&id), "collision detected at iteration {i}");
+        ids.push_back(id);
+    }
+
+    assert_eq!(ids.len(), 100);
+}

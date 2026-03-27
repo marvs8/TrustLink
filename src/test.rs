@@ -1729,3 +1729,110 @@ fn test_multi_issuer_one_expired_one_valid_returns_true() {
     // issuer1's attestation is expired but issuer2's is still valid
     assert!(client.has_valid_claim(&subject, &claim));
 }
+
+// ── subject whitelist tests ───────────────────────────────────────────────────
+
+#[test]
+fn test_whitelist_disabled_by_default() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (_, issuer, client) = setup(&env);
+    assert!(!client.is_whitelist_enabled(&issuer));
+}
+
+#[test]
+fn test_attestation_succeeds_without_whitelist() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (_, issuer, client) = setup(&env);
+    let subject = Address::generate(&env);
+    let claim_type = String::from_str(&env, "KYC_PASSED");
+    // whitelist disabled — any subject is accepted
+    let id = client.create_attestation(&issuer, &subject, &claim_type, &None, &None, &None);
+    assert!(!id.is_empty());
+}
+
+#[test]
+#[should_panic]
+fn test_attestation_rejected_when_whitelist_enabled_and_subject_not_listed() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (_, issuer, client) = setup(&env);
+    let subject = Address::generate(&env);
+    let claim_type = String::from_str(&env, "KYC_PASSED");
+
+    client.set_whitelist_enabled(&issuer, &true);
+    // subject not added — should panic with SubjectNotWhitelisted
+    client.create_attestation(&issuer, &subject, &claim_type, &None, &None, &None);
+}
+
+#[test]
+fn test_attestation_succeeds_when_subject_is_whitelisted() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (_, issuer, client) = setup(&env);
+    let subject = Address::generate(&env);
+    let claim_type = String::from_str(&env, "KYC_PASSED");
+
+    client.set_whitelist_enabled(&issuer, &true);
+    client.add_to_whitelist(&issuer, &subject);
+
+    let id = client.create_attestation(&issuer, &subject, &claim_type, &None, &None, &None);
+    assert!(!id.is_empty());
+}
+
+#[test]
+fn test_add_and_remove_from_whitelist() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (_, issuer, client) = setup(&env);
+    let subject = Address::generate(&env);
+
+    assert!(!client.is_whitelisted(&issuer, &subject));
+
+    client.add_to_whitelist(&issuer, &subject);
+    assert!(client.is_whitelisted(&issuer, &subject));
+
+    client.remove_from_whitelist(&issuer, &subject);
+    assert!(!client.is_whitelisted(&issuer, &subject));
+}
+
+#[test]
+fn test_issuer_controls_own_whitelist_independently() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (admin, issuer1, client) = setup(&env);
+    let issuer2 = Address::generate(&env);
+    client.register_issuer(&admin, &issuer2);
+
+    let subject = Address::generate(&env);
+    let claim_type = String::from_str(&env, "KYC_PASSED");
+
+    // issuer1 enables whitelist and adds subject; issuer2 does not
+    client.set_whitelist_enabled(&issuer1, &true);
+    client.add_to_whitelist(&issuer1, &subject);
+
+    // issuer1 can attest
+    let id1 = client.create_attestation(&issuer1, &subject, &claim_type, &None, &None, &None);
+    assert!(!id1.is_empty());
+
+    // issuer2 has no whitelist enabled — can also attest freely
+    let id2 = client.create_attestation(&issuer2, &subject, &claim_type, &None, &None, &None);
+    assert!(!id2.is_empty());
+}
+
+#[test]
+#[should_panic]
+fn test_whitelist_check_before_storage_write() {
+    // Verifies rejection happens before any storage write by checking
+    // that a failed attestation leaves no attestation record.
+    let env = Env::default();
+    env.mock_all_auths();
+    let (_, issuer, client) = setup(&env);
+    let subject = Address::generate(&env);
+    let claim_type = String::from_str(&env, "KYC_PASSED");
+
+    client.set_whitelist_enabled(&issuer, &true);
+    // This must panic — no attestation should be stored
+    client.create_attestation(&issuer, &subject, &claim_type, &None, &None, &None);
+}

@@ -77,6 +77,10 @@ pub enum StorageKey {
     AuditLog(String),
     /// Global pause flag — when present and true, write operations are disabled.
     Paused,
+    /// Whitelist enabled flag per issuer — when true, only whitelisted subjects are accepted.
+    WhitelistEnabled(Address),
+    /// Presence flag for a whitelisted subject under a specific issuer.
+    SubjectWhitelist(Address, Address),
 }
 
 const DAY_IN_LEDGERS: u32 = 17280;
@@ -517,6 +521,46 @@ impl Storage {
         let ttl = get_ttl_lifetime(env);
         env.storage().instance().set(&StorageKey::Paused, &paused);
         env.storage().instance().extend_ttl(ttl, ttl);
+    }
+
+    /// Return `true` if the issuer has whitelist mode enabled.
+    ///
+    /// Defaults to `false` (disabled) when the key is absent.
+    pub fn is_whitelist_enabled(env: &Env, issuer: &Address) -> bool {
+        env.storage()
+            .persistent()
+            .get(&StorageKey::WhitelistEnabled(issuer.clone()))
+            .unwrap_or(false)
+    }
+
+    /// Enable or disable whitelist mode for `issuer`.
+    pub fn set_whitelist_enabled(env: &Env, issuer: &Address, enabled: bool) {
+        let key = StorageKey::WhitelistEnabled(issuer.clone());
+        let ttl = get_ttl_lifetime(env);
+        env.storage().persistent().set(&key, &enabled);
+        env.storage().persistent().extend_ttl(&key, ttl, ttl);
+    }
+
+    /// Return `true` if `subject` is whitelisted under `issuer`.
+    pub fn is_subject_whitelisted(env: &Env, issuer: &Address, subject: &Address) -> bool {
+        env.storage()
+            .persistent()
+            .has(&StorageKey::SubjectWhitelist(issuer.clone(), subject.clone()))
+    }
+
+    /// Add `subject` to `issuer`'s whitelist.
+    pub fn add_subject_to_whitelist(env: &Env, issuer: &Address, subject: &Address) {
+        let key = StorageKey::SubjectWhitelist(issuer.clone(), subject.clone());
+        let ttl = get_ttl_lifetime(env);
+        env.storage().persistent().set(&key, &true);
+        env.storage().persistent().extend_ttl(&key, ttl, ttl);
+    }
+
+    /// Remove `subject` from `issuer`'s whitelist.
+    pub fn remove_subject_from_whitelist(env: &Env, issuer: &Address, subject: &Address) {
+        env.storage()
+            .persistent()
+            .remove(&StorageKey::SubjectWhitelist(issuer.clone(), subject.clone()));
     }
 }
 

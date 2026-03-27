@@ -234,6 +234,52 @@ impl TrustLinkContract {
         Ok(())
     }
 
+    /// Enable or disable whitelist mode for the calling issuer.
+    ///
+    /// When enabled, `create_attestation` will reject any subject not present
+    /// in the issuer's whitelist. Disabled by default.
+    ///
+    /// # Errors
+    /// - [`Error::Unauthorized`] — `issuer` is not a registered issuer.
+    pub fn set_whitelist_enabled(env: Env, issuer: Address, enabled: bool) -> Result<(), Error> {
+        issuer.require_auth();
+        Validation::require_issuer(&env, &issuer)?;
+        Storage::set_whitelist_enabled(&env, &issuer, enabled);
+        Ok(())
+    }
+
+    /// Add `subject` to the calling issuer's whitelist.
+    ///
+    /// # Errors
+    /// - [`Error::Unauthorized`] — `issuer` is not a registered issuer.
+    pub fn add_to_whitelist(env: Env, issuer: Address, subject: Address) -> Result<(), Error> {
+        issuer.require_auth();
+        Validation::require_issuer(&env, &issuer)?;
+        Storage::add_subject_to_whitelist(&env, &issuer, &subject);
+        Ok(())
+    }
+
+    /// Remove `subject` from the calling issuer's whitelist.
+    ///
+    /// # Errors
+    /// - [`Error::Unauthorized`] — `issuer` is not a registered issuer.
+    pub fn remove_from_whitelist(env: Env, issuer: Address, subject: Address) -> Result<(), Error> {
+        issuer.require_auth();
+        Validation::require_issuer(&env, &issuer)?;
+        Storage::remove_subject_from_whitelist(&env, &issuer, &subject);
+        Ok(())
+    }
+
+    /// Return `true` if `subject` is on `issuer`'s whitelist.
+    pub fn is_whitelisted(env: Env, issuer: Address, subject: Address) -> bool {
+        Storage::is_subject_whitelisted(&env, &issuer, &subject)
+    }
+
+    /// Return `true` if whitelist mode is enabled for `issuer`.
+    pub fn is_whitelist_enabled(env: Env, issuer: Address) -> bool {
+        Storage::is_whitelist_enabled(&env, &issuer)
+    }
+
     /// Update the trust tier of an already-registered issuer.
     ///
     /// # Errors
@@ -377,6 +423,12 @@ impl TrustLinkContract {
 
         if issuer == subject {
             return Err(Error::Unauthorized);
+        }
+
+        if Storage::is_whitelist_enabled(&env, &issuer)
+            && !Storage::is_subject_whitelisted(&env, &issuer, &subject)
+        {
+            return Err(Error::SubjectNotWhitelisted);
         }
 
         let timestamp = env.ledger().timestamp();

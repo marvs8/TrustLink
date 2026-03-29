@@ -272,5 +272,32 @@ impl Events {
             (request_id.clone(), reason.clone()),
         );
     }
+
+    /// Emitted when issuer creates delegation to sub-issuer for claim_type.
+    pub fn delegation_created(
+        env: &Env,
+        delegator: &Address,
+        delegate: &Address,
+        claim_type: &String,
+        expiration: Option<u64>,
+    ) {
+        env.events().publish(
+            (symbol_short!("del_created"), delegator.clone()),
+            (delegate.clone(), claim_type.clone(), expiration),
+        );
+    }
+
+    /// Emitted when issuer revokes delegation.
+    pub fn delegation_revoked(
+        env: &Env,
+        delegator: &Address,
+        delegate: &Address,
+        claim_type: &String,
+    ) {
+        env.events().publish(
+            (symbol_short!("del_revoked"), delegator.clone()),
+            (delegate.clone(), claim_type.clone()),
+        );
+    }
 }
 

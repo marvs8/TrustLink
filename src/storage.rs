@@ -30,10 +30,10 @@
 
 use crate::types::{
     Attestation, AttestationRequest, AuditEntry, ClaimTypeInfo, Endorsement, Error, ExpirationHook,
-    FeeConfig, GlobalStats, IssuerMetadata, IssuerStats, IssuerTier, MultiSigProposal, TtlConfig,
+    FeeConfig, GlobalStats, IssuerMetadata, IssuerStats, IssuerTier, MultiSigProposal, TtlConfig, Delegation,
 };
 use soroban_sdk::{contracttype, Address, Env, String, Vec};
-use crate::types::{Attestation, ClaimTypeInfo, Error, IssuerMetadata, StorageLimits};
+use crate::types::{Attestation, ClaimTypeInfo, Error, IssuerMetadata, StorageLimits, Delegation};
 
 /// Keys used to address data in contract storage.
 #[contracttype]
@@ -84,6 +84,8 @@ pub enum StorageKey {
     WhitelistEnabled(Address),
     /// Presence flag for a whitelisted subject under a specific issuer.
     SubjectWhitelist(Address, Address),
+    /// Delegation from delegator to delegate for specific claim_type.
+    Delegation((Address, Address, String)),
 }
 
 const DAY_IN_LEDGERS: u32 = 17280;
@@ -554,6 +556,42 @@ impl Storage {
         env.storage()
             .persistent()
             .remove(&StorageKey::SubjectWhitelist(issuer.clone(), subject.clone()));
+    }
+
+    /// Persist delegation from `delegator` to `delegate` for `claim_type`.
+    pub fn set_delegation(
+        env: &Env,
+        delegator: &Address,
+        delegate: &Address,
+        claim_type: &String,
+        delegation: &Delegation,
+    ) {
+        let key = StorageKey::Delegation((delegator.clone(), delegate.clone(), claim_type.clone()));
+        let ttl = get_ttl_lifetime(env);
+        env.storage().persistent().set(&key, delegation);
+        env.storage().persistent().extend_ttl(&key, ttl, ttl);
+    }
+
+    /// Retrieve delegation, or None if not found.
+    pub fn get_delegation(
+        env: &Env,
+        delegator: &Address,
+        delegate: &Address,
+        claim_type: &String,
+    ) -> Option<Delegation> {
+        let key = StorageKey::Delegation((delegator.clone(), delegate.clone(), claim_type.clone()));
+        env.storage().persistent().get(&key)
+    }
+
+    /// Remove delegation.
+    pub fn remove_delegation(
+        env: &Env,
+        delegator: &Address,
+        delegate: &Address,
+        claim_type: &String,
+    ) {
+        let key = StorageKey::Delegation((delegator.clone(), delegate.clone(), claim_type.clone()));
+        env.storage().persistent().remove(&key);
     }
 }
 

@@ -1417,7 +1417,7 @@ impl TrustLinkContract {
         env: Env,
         subject: Address,
         claim_type: String,
-    ) -> Result<Attestation, Error> {
+    ) -> Option<Attestation> {
         let attestation_ids = Storage::get_subject_attestations(&env, &subject);
         let current_time = env.ledger().timestamp();
         let mut index = attestation_ids.len();
@@ -1425,17 +1425,18 @@ impl TrustLinkContract {
         while index > 0 {
             index -= 1;
             if let Some(attestation_id) = attestation_ids.get(index) {
-                let attestation = Storage::get_attestation(&env, &attestation_id)?;
-                if !attestation.deleted
-                    && attestation.claim_type == claim_type
-                    && attestation.get_status(current_time) == AttestationStatus::Valid
-                {
-                    return Ok(attestation);
+                if let Ok(attestation) = Storage::get_attestation(&env, &attestation_id) {
+                    if !attestation.deleted
+                        && attestation.claim_type == claim_type
+                        && attestation.get_status(current_time) == AttestationStatus::Valid
+                    {
+                        return Some(attestation);
+                    }
                 }
             }
         }
 
-        Err(Error::NotFound)
+        None
     }
 
     pub fn is_issuer(env: Env, address: Address) -> bool {

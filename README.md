@@ -551,10 +551,26 @@ let valid  = contract.get_valid_claim_count(&user_address);          // only non
 // List user's attestations (paginated)
 let attestations = contract.get_subject_attestations(&user_address, &0, &10);
 
-// Search attestations by date range (paginated)
+// Search attestations by date range (legacy offset pagination)
 let from_ts = 1_700_000_000;
 let to_ts = 1_701_000_000;
 let attestations = contract.get_attestations_in_range(&user_address, &from_ts, &to_ts, &0, &10);
+
+// Preferred page-after cursor pagination for resilient traversal across deletions
+let first_page = contract.get_attestations_in_range_after(
+    &user_address,
+    &from_ts,
+    &to_ts,
+    &None,
+    &10,
+);
+let second_page = contract.get_attestations_in_range_after(
+    &user_address,
+    &from_ts,
+    &to_ts,
+    &Some(first_page.get(9).unwrap().id.clone()),
+    &10,
+);
 
 // List issuer's attestations
 let issued = contract.get_issuer_attestations(&issuer_address, &0, &10);

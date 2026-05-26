@@ -167,9 +167,10 @@ When an issuer is removed via `remove_issuer`:
 | Existing attestations remain valid                       | Yes      | Attestation validity depends only on revocation and expiration status, not issuer registration                       |
 | `has_valid_claim` returns true for existing attestations | Yes      | Validity checks do not verify issuer registration                                                                    |
 | Removed issuer creates new attestations                  | **No**   | `create_attestation` calls `require_issuer`, which rejects unregistered issuers                                      |
-| Removed issuer revokes their own attestations            | Yes      | `revoke_attestation` only checks that the caller matches the attestation's original issuer, not current registration |
+| Removed issuer revokes their own attestations            | **No**   | `revoke_attestation` requires the caller to still be a registered issuer (deregistered issuers cannot revoke) |
 
-This is by design — attestations represent signed facts at a point in time. Removing an issuer prevents future issuance but does not retroactively invalidate previously issued attestations.
+Removing an issuer prevents future issuance and also blocks the removed issuer from revoking attestations after deregistration. Previously issued attestations remain valid unless successfully revoked by a currently-registered issuer.
+
 
 ### Register Bridge Contracts
 

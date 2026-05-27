@@ -293,6 +293,16 @@ pub struct Delegation {
 }
 
 
+/// A named attestation template owned by an issuer.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AttestationTemplate {
+    pub claim_type: String,
+    /// Optional expiration window in days (None = no expiration).
+    pub default_expiration_days: Option<u32>,
+    pub metadata_template: Option<String>,
+}
+
 /// Admin council: ordered list of admin addresses.
 pub type AdminCouncil = Vec<Address>;
 

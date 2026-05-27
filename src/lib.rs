@@ -27,11 +27,14 @@ pub(crate) mod callback {
 
 use soroban_sdk::{contract, contractimpl, Address, Env, String, Vec};
 
+use crate::events::Events;
+use crate::storage::Storage;
 use crate::types::{
-    Attestation, AttestationRequest, AttestationStatus, AuditEntry, Error,
+    Attestation, AttestationRequest, AttestationStatus, AttestationTemplate, AuditEntry, Error,
     ExpirationHook, FeeConfig, GlobalStats, HealthStatus, IssuerMetadata, IssuerStats, IssuerTier,
     MultiSigProposal, RateLimitConfig, StorageLimits,
 };
+use crate::validation::Validation;
 
 #[contract]
 pub struct TrustLinkContract;
@@ -577,7 +580,7 @@ impl TrustLinkContract {
         issuer.require_auth();
         Validation::require_issuer(&env, &issuer)?;
         Validation::validate_claim_type(&template.claim_type)?;
-        validate_metadata(&env, &template.metadata_template)?;
+        Validation::validate_metadata(&env, &template.metadata_template)?;
 
         Storage::set_template(&env, &issuer, &template_id, &template);
         Storage::add_to_template_registry(&env, &issuer, &template_id);
@@ -612,7 +615,7 @@ impl TrustLinkContract {
             .ok_or(Error::NotFound)?;
 
         // Validate overrides before resolving.
-        validate_metadata(&env, &metadata_override)?;
+        Validation::validate_metadata(&env, &metadata_override)?;
 
         let current_time = env.ledger().timestamp();
         if let Some(ts) = expiration_override {
@@ -638,13 +641,14 @@ impl TrustLinkContract {
         };
 
         // Delegate to the shared internal creation path.
-        Self::create_attestation_internal(
+        attestation::create_attestation_internal(
             &env,
             issuer,
             subject,
             template.claim_type,
             expiration,
             metadata,
+            None,
             None,
             None,
         )

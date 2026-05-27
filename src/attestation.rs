@@ -724,7 +724,7 @@ pub fn endorse_attestation(env: &Env, endorser: Address, attestation_id: String)
         endorser: endorser.clone(),
         timestamp: env.ledger().timestamp(),
     };
-    Storage::add_endorsement(env, &endorsement);
+    Storage::add_endorsement(env, &attestation_id, &endorsement);
     Ok(())
 }
 

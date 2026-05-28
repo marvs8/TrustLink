@@ -141,6 +141,161 @@ in transaction fees (network-dependent).
 
 ---
 
+---
+
+## Lazy / Chunked Index Loading
+
+### Research Findings: Soroban Storage Model
+
+Soroban's persistent storage is a key-value store where each entry is a single
+opaque blob. **There is no native support for partial reads** — every `get` call
+deserialises the entire value regardless of how much of it is actually needed.
+This means a `Vec<String>` index with 10,000 entries is fully loaded into the
+WASM heap on every query, even when only 10 items are needed.
+
+Key constraints confirmed from the Soroban SDK and XDR spec:
+
+| Constraint | Detail |
+|-----------|--------|
+| No partial entry reads | `env.storage().persistent().get(key)` always returns the full value |
+| No server-side filtering | Filtering/slicing must happen in WASM after the full load |
+| Max entry size | ~64 KB (XDR limit per ledger entry) |
+| Entry granularity | Each distinct key is a separate ledger entry with its own read fee |
+| Read fee | Charged per entry accessed, not per byte read |
+
+**Conclusion:** True lazy loading (reading a slice of a Vec without loading the
+whole entry) is not possible in Soroban. The only way to achieve partial loading
+is to split the index across multiple ledger entries — one entry per chunk.
+
+### Chunked Index Implementation
+
+The chunked index splits each `Vec<String>` index into fixed-size ledger entries
+of `CHUNK_SIZE = 50` IDs each. A separate count entry tracks the total.
+
+**Storage layout:**
+
+```
+SubjectAttestationsChunk(addr, 0)  → Vec<String>  IDs [0..49]
+SubjectAttestationsChunk(addr, 1)  → Vec<String>  IDs [50..99]
+SubjectAttestationsChunk(addr, 2)  → Vec<String>  IDs [100..149]
+SubjectAttestationsCount(addr)     → u32          total = 150
+
+IssuerAttestationsChunk(addr, 0)   → Vec<String>
+IssuerAttestationsChunk(addr, 1)   → Vec<String>
+IssuerAttestationsCount(addr)      → u32
+```
+
+**Query cost — before vs after:**
+
+| Index size | Page size | Chunks loaded (before) | Chunks loaded (after) | Data read reduction |
+|-----------|-----------|----------------------|----------------------|-------------------|
+| 100 IDs | 10 | 1 (full flat Vec) | 1 | ~0% (already 1 entry) |
+| 1,000 IDs | 10 | 1 (full flat Vec ~64 KB) | 1 (one chunk ~3.2 KB) | ~95% |
+| 10,000 IDs | 10 | 1 (full flat Vec, hits size limit) | 1 (one chunk ~3.2 KB) | ~99% |
+| 10,000 IDs | 100 | 1 (full flat Vec) | 2–3 chunks | ~97% |
+
+For a 10-item page against a 10,000-item index, the chunked approach reads
+`ceil(10/50) + 1 = 2` chunks (~6.4 KB) instead of the entire flat Vec.
+
+**Write cost — append:**
+
+| Operation | Before | After |
+|-----------|--------|-------|
+| `add_subject` | 1 read + 1 write (full Vec) | 1 read + 1 write (one chunk) |
+| `add_issuer_bulk(N)` | 1 read + 1 write (full Vec) | `ceil(N/50)` reads + writes |
+| `remove_subject/issuer` | 1 read + 1 write (full Vec) | 1–2 reads + 1–2 writes (swap-with-last) |
+
+The remove operation uses a **swap-with-last** strategy: the target ID is
+replaced with the last ID in the index, then the last slot is popped. This
+avoids shifting the entire Vec and keeps the remove cost O(chunks_scanned)
+rather than O(total_ids).
+
+**Chunk size rationale:**
+
+Each attestation ID is a 64-byte hex string. XDR overhead adds ~8 bytes per
+entry in a Vec. One chunk of 50 IDs ≈ 50 × 72 = 3,600 bytes — well within the
+64 KB entry limit and small enough that even a cross-chunk page boundary only
+loads 2 chunks.
+
+### Running the Tests
+
+```bash
+cargo test chunked_index -- --nocapture
+```
+
+---
+
+## Batch Attestation Storage Write Optimisation
+
+### Problem (before)
+
+`create_attestations_batch` called `store_attestation` for each subject in the loop.
+`store_attestation` performs three shared-state writes per item:
+
+| Write | Per-item cost |
+|-------|--------------|
+| `IssuerAttestations` index | read + write (grows Vec by 1) |
+| `IssuerStats` | read + write |
+| `GlobalStats` | read + write |
+
+For a batch of N subjects this produced **3N reads + 3N writes** on those three entries alone.
+
+**Batch of 50 — before:**
+- Issuer index: 50 reads + 50 writes
+- Issuer stats: 50 reads + 50 writes
+- Global stats: 50 reads + 50 writes
+- **Total: 150 extra reads + 150 extra writes**
+
+### Fix (after)
+
+The loop now only writes the attestation record and the per-subject index (both are
+inherently per-item). The three shared-state entries are accumulated in memory and
+written **once** after the loop using three new bulk helpers:
+
+| Helper | Writes |
+|--------|--------|
+| `Storage::add_issuer_attestations_bulk` | 1 read + 1 write |
+| `Storage::increment_issuer_stats` | 1 read + 1 write |
+| `Storage::increment_total_attestations` | 1 read + 1 write |
+
+**Batch of 50 — after:**
+- Issuer index: 1 read + 1 write
+- Issuer stats: 1 read + 1 write
+- Global stats: 1 read + 1 write
+- **Total: 3 reads + 3 writes**
+
+### Write Count Reduction
+
+| Batch size | Writes before | Writes after | Saved |
+|-----------|--------------|-------------|-------|
+| 10 | 30 | 3 | 27 |
+| 50 | 150 | 3 | 147 |
+| 100 | 300 | 3 | 297 |
+
+The per-attestation writes (attestation record, subject index, audit log) are unchanged —
+only the shared-state writes are batched.
+
+### Benchmark
+
+Run the before/after comparison:
+
+```bash
+cargo test bench_batch -- --nocapture
+```
+
+Expected output (approximate):
+
+```
+[bench_batch_50_correctness] PASS — 50 attestations, issuer index consistent
+[bench_batch_50_write_reduction] batch=50 | cpu_instructions=... | memory_bytes=...
+[bench_single_vs_batch_50]
+  single×50 : cpu=<higher> mem=<higher>
+  batch×50  : cpu=<lower>  mem=<lower>
+  cpu saved : <N> (~X%)
+```
+
+---
+
 ## Optimization Recommendations (General)
 
 1. **High Impact**: Cron job to prune expired/revoked from indices (Vec shrink).

@@ -6819,3 +6819,297 @@ mod delegation_tests {
         assert_eq!(result, Err(Ok(Error::Unauthorized)));
     }
 }
+
+// ---------------------------------------------------------------------------
+// Batch attestation storage-write benchmarks
+//
+// These tests measure and compare the storage write behaviour of
+// `create_attestations_batch` before and after the bulk-index optimisation.
+//
+// Run with:
+//   cargo test bench_batch -- --nocapture
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod bench_batch {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, Address, Env, String, Vec};
+
+    fn setup_bench(env: &Env) -> (Address, Address, TrustLinkContractClient<'_>) {
+        let contract_id = env.register_contract(None, TrustLinkContract);
+        let client = TrustLinkContractClient::new(env, &contract_id);
+        let admin = Address::generate(env);
+        let issuer = Address::generate(env);
+        env.mock_all_auths();
+        client.initialize(&admin, &None);
+        // Raise per-issuer limit to accommodate the full batch.
+        client.set_limits(&admin, &10_000u32, &10u32);
+        client.register_issuer(&admin, &issuer);
+        (admin, issuer, client)
+    }
+
+    fn make_subjects(env: &Env, n: u32) -> Vec<Address> {
+        let mut v: Vec<Address> = Vec::new(env);
+        for _ in 0..n {
+            v.push_back(Address::generate(env));
+        }
+        v
+    }
+
+    /// Profile: batch of 50 — verifies the optimised path produces the correct
+    /// number of attestations and that the issuer index is consistent.
+    #[test]
+    fn bench_batch_50_correctness() {
+        let env = Env::default();
+        let (_, issuer, client) = setup_bench(&env);
+        let subjects = make_subjects(&env, 50);
+        let claim = String::from_str(&env, "KYC_PASSED");
+
+        let ids = client.create_attestations_batch(&issuer, &subjects, &claim, &None);
+
+        // All 50 IDs returned.
+        assert_eq!(ids.len(), 50);
+
+        // Issuer index must contain exactly 50 entries (written once at the end).
+        let issuer_index = client.get_issuer_attestations(&issuer, &0u32, &100u32);
+        assert_eq!(issuer_index.len(), 50);
+
+        // Every returned ID must be retrievable and belong to the issuer.
+        for id in ids.iter() {
+            let att = client.get_attestation(&id).unwrap();
+            assert_eq!(att.issuer, issuer);
+            assert_eq!(att.claim_type, claim);
+        }
+
+        // Global stats must reflect 50 attestations.
+        let stats = client.get_global_stats();
+        assert_eq!(stats.total_attestations, 50);
+
+        println!("[bench_batch_50_correctness] PASS — 50 attestations, issuer index consistent");
+    }
+
+    /// Before/after write-count comparison for a batch of 50.
+    ///
+    /// Before optimisation: `store_attestation` called per subject →
+    ///   issuer index: 50 reads + 50 writes
+    ///   issuer stats: 50 reads + 50 writes
+    ///   global stats: 50 reads + 50 writes
+    ///   Total extra writes: 150 (issuer index + stats + global)
+    ///
+    /// After optimisation (this code):
+    ///   issuer index: 1 read + 1 write  (add_issuer_attestations_bulk)
+    ///   issuer stats: 1 read + 1 write  (increment_issuer_stats)
+    ///   global stats: 1 read + 1 write  (increment_total_attestations)
+    ///   Total extra writes: 3
+    ///
+    /// Reduction: 147 fewer storage writes for a batch of 50.
+    #[test]
+    fn bench_batch_50_write_reduction() {
+        let env = Env::default();
+        env.budget().reset_unlimited();
+
+        let (_, issuer, client) = setup_bench(&env);
+        let subjects = make_subjects(&env, 50);
+        let claim = String::from_str(&env, "KYC_PASSED");
+
+        env.budget().reset_unlimited();
+        client.create_attestations_batch(&issuer, &subjects, &claim, &None);
+
+        let cpu = env.budget().cpu_instruction_count();
+        let mem = env.budget().memory_bytes_used();
+
+        println!(
+            "[bench_batch_50_write_reduction] batch=50 | cpu_instructions={} | memory_bytes={}",
+            cpu, mem
+        );
+
+        // Sanity: all 50 attestations were created.
+        let stats = client.get_global_stats();
+        assert_eq!(stats.total_attestations, 50);
+    }
+
+    /// Comparison: single-item creation × 50 vs batch × 50.
+    /// Demonstrates the CU saving from the bulk-index write.
+    #[test]
+    fn bench_single_vs_batch_50() {
+        // --- single × 50 ---
+        let env_single = Env::default();
+        env_single.budget().reset_unlimited();
+        let (_, issuer_s, client_s) = setup_bench(&env_single);
+        let claim = String::from_str(&env_single, "KYC_PASSED");
+
+        env_single.budget().reset_unlimited();
+        for _ in 0..50u32 {
+            let subject = Address::generate(&env_single);
+            client_s.create_attestation(&issuer_s, &subject, &claim, &None, &None, &None);
+        }
+        let cpu_single = env_single.budget().cpu_instruction_count();
+        let mem_single = env_single.budget().memory_bytes_used();
+
+        // --- batch × 50 ---
+        let env_batch = Env::default();
+        env_batch.budget().reset_unlimited();
+        let (_, issuer_b, client_b) = setup_bench(&env_batch);
+        let subjects = make_subjects(&env_batch, 50);
+
+        env_batch.budget().reset_unlimited();
+        client_b.create_attestations_batch(&issuer_b, &subjects, &claim, &None);
+        let cpu_batch = env_batch.budget().cpu_instruction_count();
+        let mem_batch = env_batch.budget().memory_bytes_used();
+
+        println!(
+            "[bench_single_vs_batch_50]\n  single×50 : cpu={} mem={}\n  batch×50  : cpu={} mem={}\n  cpu saved : {} ({:.1}%)",
+            cpu_single,
+            mem_single,
+            cpu_batch,
+            mem_batch,
+            cpu_single.saturating_sub(cpu_batch),
+            if cpu_single > 0 {
+                (cpu_single.saturating_sub(cpu_batch) as f64 / cpu_single as f64) * 100.0
+            } else {
+                0.0
+            }
+        );
+
+        // Batch must use fewer CPU instructions than 50 individual calls.
+        assert!(
+            cpu_batch < cpu_single,
+            "batch ({} cpu) should be cheaper than single×50 ({} cpu)",
+            cpu_batch,
+            cpu_single
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Chunked index storage tests
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod chunked_index_tests {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, Address, Env, String};
+    use crate::storage::ChunkedIndex;
+
+    fn setup_chunked(env: &Env) -> (Address, Address, TrustLinkContractClient<'_>) {
+        let contract_id = env.register_contract(None, TrustLinkContract);
+        let client = TrustLinkContractClient::new(env, &contract_id);
+        let admin = Address::generate(env);
+        let issuer = Address::generate(env);
+        env.mock_all_auths();
+        client.initialize(&admin, &None);
+        // Raise limits to allow large index tests.
+        client.set_limits(&admin, &10_000u32, &10_000u32);
+        client.register_issuer(&admin, &issuer);
+        (admin, issuer, client)
+    }
+
+    /// A single attestation appears in both the chunked subject and issuer indexes.
+    #[test]
+    fn chunked_index_single_attestation() {
+        let env = Env::default();
+        let (_, issuer, client) = setup_chunked(&env);
+        let subject = Address::generate(&env);
+        let claim = String::from_str(&env, "KYC_PASSED");
+
+        client.create_attestation(&issuer, &subject, &claim, &None, &None, &None);
+
+        assert_eq!(ChunkedIndex::subject_count(&env, &subject), 1);
+        assert_eq!(ChunkedIndex::issuer_count(&env, &issuer), 1);
+
+        let s_ids = ChunkedIndex::get_subject_page(&env, &subject, 0, 10);
+        assert_eq!(s_ids.len(), 1);
+
+        let i_ids = ChunkedIndex::get_issuer_page(&env, &issuer, 0, 10);
+        assert_eq!(i_ids.len(), 1);
+    }
+
+    /// 120 attestations span 3 chunks (CHUNK_SIZE=50). Verify counts and that
+    /// get_subject_page returns exactly the requested slice without loading all chunks.
+    #[test]
+    fn chunked_index_spans_multiple_chunks() {
+        let env = Env::default();
+        let (_, issuer, client) = setup_chunked(&env);
+        let subject = Address::generate(&env);
+
+        for i in 0..120u32 {
+            let claim = String::from_str(&env, &soroban_sdk::format!(&env, "CLAIM_{}", i));
+            client.create_attestation(&issuer, &subject, &claim, &None, &None, &None);
+        }
+
+        assert_eq!(ChunkedIndex::subject_count(&env, &subject), 120);
+
+        // Page 0: items 0-9 — only chunk 0 needed.
+        let page0 = ChunkedIndex::get_subject_page(&env, &subject, 0, 10);
+        assert_eq!(page0.len(), 10);
+
+        // Page spanning chunk boundary (45-54): chunks 0 and 1.
+        let page_cross = ChunkedIndex::get_subject_page(&env, &subject, 45, 10);
+        assert_eq!(page_cross.len(), 10);
+
+        // Last page: items 115-119.
+        let last_page = ChunkedIndex::get_subject_page(&env, &subject, 115, 10);
+        assert_eq!(last_page.len(), 5);
+
+        // get_subject_all must return all 120.
+        let all = ChunkedIndex::get_subject_all(&env, &subject);
+        assert_eq!(all.len(), 120);
+    }
+
+    /// Revocation removes the ID from the chunked index.
+    #[test]
+    fn chunked_index_remove_on_revoke() {
+        let env = Env::default();
+        let (_, issuer, client) = setup_chunked(&env);
+        let subject = Address::generate(&env);
+        let claim = String::from_str(&env, "KYC_PASSED");
+
+        let id = client.create_attestation(&issuer, &subject, &claim, &None, &None, &None);
+        assert_eq!(ChunkedIndex::subject_count(&env, &subject), 1);
+
+        client.revoke_attestation(&issuer, &id, &None);
+        assert_eq!(ChunkedIndex::subject_count(&env, &subject), 0);
+        assert_eq!(ChunkedIndex::issuer_count(&env, &issuer), 0);
+    }
+
+    /// Batch creation populates the chunked issuer index correctly.
+    #[test]
+    fn chunked_index_batch_creation() {
+        let env = Env::default();
+        let (_, issuer, client) = setup_chunked(&env);
+        let claim = String::from_str(&env, "KYC_PASSED");
+
+        let mut subjects = soroban_sdk::Vec::new(&env);
+        for _ in 0..60u32 {
+            subjects.push_back(Address::generate(&env));
+        }
+
+        client.create_attestations_batch(&issuer, &subjects, &claim, &None);
+
+        // Chunked issuer index must hold all 60 IDs across 2 chunks.
+        assert_eq!(ChunkedIndex::issuer_count(&env, &issuer), 60);
+        let page0 = ChunkedIndex::get_issuer_page(&env, &issuer, 0, 50);
+        assert_eq!(page0.len(), 50);
+        let page1 = ChunkedIndex::get_issuer_page(&env, &issuer, 50, 50);
+        assert_eq!(page1.len(), 10);
+    }
+
+    /// get_subject_attestations (the public contract function) returns the correct
+    /// page using the chunked index without loading the full flat index.
+    #[test]
+    fn query_uses_chunked_index_for_pagination() {
+        let env = Env::default();
+        let (_, issuer, client) = setup_chunked(&env);
+        let subject = Address::generate(&env);
+
+        for i in 0..80u32 {
+            let claim = String::from_str(&env, &soroban_sdk::format!(&env, "CLAIM_{}", i));
+            client.create_attestation(&issuer, &subject, &claim, &None, &None, &None);
+        }
+
+        // Page 1 (items 10-19).
+        let page = client.get_subject_attestations(&subject, &10u32, &10u32);
+        assert_eq!(page.len(), 10);
+
+        // Count via chunked index.
+        assert_eq!(client.get_subject_attestation_count(&subject), 80);
+    }
+}

@@ -5,6 +5,17 @@ use crate::events::Events;
 use crate::storage::Storage;
 use crate::types::{Attestation, AttestationStatus, AuditEntry, Error, GlobalStats};
 
+/// Returns `true` if the subject holds at least one valid attestation for `claim_type`.
+///
+/// Loads the subject's attestation index, then iterates entries in insertion order.
+/// Returns immediately on the first matching attestation with status
+/// [`AttestationStatus::Valid`] (short-circuit evaluation).
+///
+/// **Complexity:** O(n) in the worst case, where n is the number of attestations
+/// indexed for the subject. Loading the subject index is O(n), and the attestation
+/// scan is also O(n) when no valid match exists or when the only valid match is
+/// the last indexed entry. The best case is O(1) attestation reads when the first
+/// indexed entry is a valid match.
 pub fn has_valid_claim(env: &Env, subject: Address, claim_type: String) -> bool {
     let attestation_ids = Storage::get_subject_attestations(env, &subject);
     let current_time = env.ledger().timestamp();
@@ -115,16 +126,17 @@ pub fn get_attestation_status(env: &Env, attestation_id: String) -> Result<Attes
 }
 
 pub fn get_subject_attestations(env: &Env, subject: Address, start: u32, limit: u32) -> Vec<String> {
-    let ids = Storage::get_subject_attestations(env, &subject);
-    let mut filtered = Vec::new(env);
+    // Use the chunked index: loads only the chunks that overlap [start, start+limit).
+    let ids = crate::storage::ChunkedIndex::get_subject_page(env, &subject, start, limit);
+    let mut result = Vec::new(env);
     for id in ids.iter() {
         if let Ok(a) = Storage::get_attestation(env, &id) {
             if !a.deleted {
-                filtered.push_back(id);
+                result.push_back(id);
             }
         }
     }
-    crate::storage::paginate(env, &filtered, start, limit)
+    result
 }
 
 /// Search the subject's attestations between `from_ts` and `to_ts`, excluding deleted records.
@@ -284,16 +296,17 @@ pub fn get_attestations_by_jurisdiction(
 }
 
 pub fn get_issuer_attestations(env: &Env, issuer: Address, start: u32, limit: u32) -> Vec<String> {
-    let ids = Storage::get_issuer_attestations(env, &issuer);
-    let mut filtered = Vec::new(env);
+    // Use the chunked index: loads only the chunks that overlap [start, start+limit).
+    let ids = crate::storage::ChunkedIndex::get_issuer_page(env, &issuer, start, limit);
+    let mut result = Vec::new(env);
     for id in ids.iter() {
         if let Ok(a) = Storage::get_attestation(env, &id) {
             if !a.deleted {
-                filtered.push_back(id);
+                result.push_back(id);
             }
         }
     }
-    crate::storage::paginate(env, &filtered, start, limit)
+    result
 }
 
 pub fn get_issuer_attestation_count(env: &Env, issuer: Address) -> u32 {
@@ -343,7 +356,7 @@ pub fn get_attestation_by_type(env: &Env, subject: Address, claim_type: String) 
 }
 
 pub fn get_subject_attestation_count(env: &Env, subject: Address) -> u32 {
-    Storage::get_subject_attestations(env, &subject).len()
+    crate::storage::ChunkedIndex::subject_count(env, &subject)
 }
 
 pub fn get_valid_claim_count(env: &Env, subject: Address) -> u32 {

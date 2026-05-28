@@ -229,6 +229,24 @@ impl Storage {
         let ttl = get_ttl_lifetime(env);
         env.storage().persistent().set(&key, &true);
         env.storage().persistent().extend_ttl(&key, ttl, ttl);
+        // Maintain ordered BridgeList
+        let mut list = Self::get_bridge_list(env);
+        for existing in list.iter() {
+            if &existing == bridge {
+                return;
+            }
+        }
+        list.push_back(bridge.clone());
+        let list_key = StorageKey::BridgeList;
+        env.storage().persistent().set(&list_key, &list);
+        env.storage().persistent().extend_ttl(&list_key, ttl, ttl);
+    }
+
+    pub fn get_bridge_list(env: &Env) -> Vec<Address> {
+        env.storage()
+            .persistent()
+            .get(&StorageKey::BridgeList)
+            .unwrap_or(Vec::new(env))
     }
 
     pub fn has_attestation(env: &Env, id: &String) -> bool {
@@ -282,6 +300,60 @@ impl Storage {
         list.push_back(attestation_id.clone());
         env.storage().persistent().set(&key, &list);
         env.storage().persistent().extend_ttl(&key, ttl, ttl);
+    }
+
+    /// Append multiple attestation IDs to the issuer index in a single write.
+    ///
+    /// Used by `create_attestations_batch` to replace N per-item writes with
+    /// one read + one write regardless of batch size.
+    pub fn add_issuer_attestations_bulk(env: &Env, issuer: &Address, attestation_ids: &Vec<String>) {
+        if attestation_ids.is_empty() {
+            return;
+        }
+        let key = StorageKey::IssuerAttestations(issuer.clone());
+        let ttl = get_ttl_lifetime(env);
+        let mut list = Self::get_issuer_attestations(env, issuer);
+        for id in attestation_ids.iter() {
+            list.push_back(id);
+        }
+        env.storage().persistent().set(&key, &list);
+        env.storage().persistent().extend_ttl(&key, ttl, ttl);
+    }
+
+    /// Increment the issuer's `total_issued` counter by `count` in a single write.
+    ///
+    /// Used by `create_attestations_batch` to replace N per-item stat writes.
+    pub fn increment_issuer_stats(env: &Env, issuer: &Address, count: u64) {
+        let mut stats = Self::get_issuer_stats(env, issuer);
+        stats.total_issued = stats.total_issued.saturating_add(count);
+        Self::set_issuer_stats(env, issuer, &stats);
+    }
+
+    /// Append multiple attestation IDs to the issuer index in a single write.
+    ///
+    /// Used by `create_attestations_batch` to replace the N per-item writes
+    /// with one read + one write regardless of batch size.
+    pub fn add_issuer_attestations_bulk(env: &Env, issuer: &Address, attestation_ids: &Vec<String>) {
+        if attestation_ids.is_empty() {
+            return;
+        }
+        let key = StorageKey::IssuerAttestations(issuer.clone());
+        let ttl = get_ttl_lifetime(env);
+        let mut list = Self::get_issuer_attestations(env, issuer);
+        for id in attestation_ids.iter() {
+            list.push_back(id);
+        }
+        env.storage().persistent().set(&key, &list);
+        env.storage().persistent().extend_ttl(&key, ttl, ttl);
+    }
+
+    /// Increment the issuer's `total_issued` counter by `count` in a single write.
+    ///
+    /// Used by `create_attestations_batch` to replace N per-item stat writes.
+    pub fn increment_issuer_stats(env: &Env, issuer: &Address, count: u64) {
+        let mut stats = Self::get_issuer_stats(env, issuer);
+        stats.total_issued = stats.total_issued.saturating_add(count);
+        Self::set_issuer_stats(env, issuer, &stats);
     }
 
     /// Remove an attestation ID from the issuer's attestation index.

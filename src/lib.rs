@@ -581,6 +581,10 @@ impl TrustLinkContract {
         request::reject_request(&env, issuer, request_id, reason)
     }
 
+    pub fn cancel_request(env: Env, subject: Address, request_id: String) -> Result<(), Error> {
+        request::cancel_request(&env, subject, request_id)
+    }
+
     pub fn get_pending_requests(env: Env, issuer: Address, start: u32, limit: u32) -> Vec<AttestationRequest> {
         request::get_pending_requests(&env, issuer, start, limit)
     }

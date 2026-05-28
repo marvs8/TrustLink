@@ -27,6 +27,7 @@ const TOPIC_EXP_HOOK: Symbol = symbol_short!("exp_hook");
 const TOPIC_REQ: Symbol = symbol_short!("att_req");
 const TOPIC_REQ_OK: Symbol = symbol_short!("req_ok");
 const TOPIC_REQ_NO: Symbol = symbol_short!("req_no");
+const TOPIC_REQ_CANCEL: Symbol = symbol_short!("req_cncl");
 
 const TOPIC_WL_ADD: Symbol = symbol_short!("wl_add");
 const TOPIC_WL_REM: Symbol = symbol_short!("wl_rem");
@@ -357,6 +358,14 @@ impl Events {
         env.events().publish(
             (TOPIC_REQ_NO, issuer.clone()),
             (request_id.clone(), reason.clone()),
+        );
+    }
+
+    /// Emitted when a subject cancels their own pending attestation request.
+    pub fn request_cancelled(env: &Env, request_id: &String, subject: &Address) {
+        env.events().publish(
+            (TOPIC_REQ_CANCEL, subject.clone()),
+            request_id.clone(),
         );
     }
 

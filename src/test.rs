@@ -3441,6 +3441,96 @@ mod request_tests {
         let result = client.try_reject_request(&issuer, &req_id, &None);
         assert_eq!(result, Err(Ok(Error::RequestAlreadyProcessed)));
     }
+
+    // -------------------------------------------------------------------------
+    // cancel_request
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_cancel_request_happy_path() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (_, issuer, subject, client) = setup(&env);
+
+        let claim = String::from_str(&env, "KYC");
+        let req_id = client.request_attestation(&subject, &issuer, &claim);
+
+        client.cancel_request(&subject, &req_id);
+
+        let req = client.get_attestation_request(&req_id);
+        assert_eq!(req.status, crate::types::RequestStatus::Cancelled);
+    }
+
+    #[test]
+    fn test_cancel_request_removes_from_pending_list() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (_, issuer, subject, client) = setup(&env);
+
+        let claim = String::from_str(&env, "KYC");
+        let req_id = client.request_attestation(&subject, &issuer, &claim);
+
+        client.cancel_request(&subject, &req_id);
+
+        let pending = client.get_pending_requests(&issuer, &0, &10);
+        assert_eq!(pending.len(), 0);
+    }
+
+    #[test]
+    fn test_cancel_request_wrong_subject_rejected() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (_, issuer, subject, client) = setup(&env);
+
+        let claim = String::from_str(&env, "KYC");
+        let req_id = client.request_attestation(&subject, &issuer, &claim);
+
+        let stranger = Address::generate(&env);
+        let result = client.try_cancel_request(&stranger, &req_id);
+        assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    }
+
+    #[test]
+    fn test_cancel_already_fulfilled_request_rejected() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (_, issuer, subject, client) = setup(&env);
+
+        let claim = String::from_str(&env, "KYC");
+        let req_id = client.request_attestation(&subject, &issuer, &claim);
+        client.fulfill_request(&issuer, &req_id, &None);
+
+        let result = client.try_cancel_request(&subject, &req_id);
+        assert_eq!(result, Err(Ok(Error::RequestAlreadyProcessed)));
+    }
+
+    #[test]
+    fn test_cancel_already_cancelled_request_rejected() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (_, issuer, subject, client) = setup(&env);
+
+        let claim = String::from_str(&env, "KYC");
+        let req_id = client.request_attestation(&subject, &issuer, &claim);
+        client.cancel_request(&subject, &req_id);
+
+        let result = client.try_cancel_request(&subject, &req_id);
+        assert_eq!(result, Err(Ok(Error::RequestAlreadyProcessed)));
+    }
+
+    #[test]
+    fn test_fulfill_cancelled_request_rejected() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (_, issuer, subject, client) = setup(&env);
+
+        let claim = String::from_str(&env, "KYC");
+        let req_id = client.request_attestation(&subject, &issuer, &claim);
+        client.cancel_request(&subject, &req_id);
+
+        let result = client.try_fulfill_request(&issuer, &req_id, &None);
+        assert_eq!(result, Err(Ok(Error::RequestAlreadyProcessed)));
+    }
 }
 
 // ============================================================================

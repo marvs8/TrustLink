@@ -33,6 +33,7 @@ pub enum RequestStatus {
     Pending = 0,
     Fulfilled = 1,
     Rejected = 2,
+    Cancelled = 3,
 }
 
 /// A pull-based attestation request submitted by a subject to a registered issuer.

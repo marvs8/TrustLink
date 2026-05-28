@@ -1,0 +1,83 @@
+"""
+TrustLink Attestation GraphQL API
+"""
+
+enum Status {
+  ACTIVE
+  REVOKED
+}
+
+type Attestation {
+  id: String!
+  issuer: String!
+  subject: String!
+  claimType: String!
+  timestamp: String!
+  expiration: String
+  isRevoked: Boolean!
+  metadata: String
+  imported: Boolean!
+  bridged: Boolean!
+  sourceChain: String
+  sourceTx: String
+  createdAt: String!
+  updatedAt: String!
+}
+
+type MultisigProposal {
+  id: String!
+  subject: String!
+  proposer: String!
+  claimType: String!
+  threshold: Int!
+  signers: [String!]!
+  signatureCount: Int!
+  finalized: Boolean!
+  expiresAt: String!
+  createdAt: String!
+  updatedAt: String!
+}
+
+type IssuerStats {
+  issuer: String!
+  total: Int!
+  active: Int!
+  revoked: Int!
+  claimTypes: [String!]!
+}
+
+type Query {
+  """Query attestations with optional filters"""
+  attestations(subject: String, claimType: String, status: Status): [Attestation!]!
+
+  """Get statistics for a specific issuer"""
+  issuerStats(issuer: String!): IssuerStats!
+
+  """Get a multi-sig proposal by ID"""
+  proposal(id: String!): MultisigProposal
+
+  """List all multi-sig proposals"""
+  proposals(subject: String, finalized: Boolean): [MultisigProposal!]!
+}
+
+type Subscription {
+  """Subscribe to new attestation creation events, optionally filtered by subject"""
+  onAttestationCreated(subject: String): Attestation!
+
+  """Subscribe to attestation revocation events, optionally filtered by issuer"""
+  onAttestationRevoked(issuer: String): AttestationRevoked!
+
+  """Subscribe to issuer registration events"""
+  onIssuerRegistered: IssuerRegistered!
+}
+
+type AttestationRevoked {
+  id: String!
+  issuer: String!
+  revokedAt: String!
+}
+
+type IssuerRegistered {
+  issuer: String!
+  registeredAt: String!
+}

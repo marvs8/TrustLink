@@ -60,6 +60,8 @@ pub enum StorageKey {
     AttestationTemplate(Address, String),
     AttestationTemplateList(Address),
     Delegation(Address, Address, String),
+    /// Ordered list of all registered bridge contract addresses.
+    BridgeList,
 }
 
 fn get_ttl_lifetime(env: &Env) -> u32 {
@@ -197,6 +199,24 @@ impl Storage {
         let ttl = get_ttl_lifetime(env);
         env.storage().persistent().set(&key, &true);
         env.storage().persistent().extend_ttl(&key, ttl, ttl);
+        // Maintain ordered BridgeList
+        let mut list = Self::get_bridge_list(env);
+        for existing in list.iter() {
+            if &existing == bridge {
+                return;
+            }
+        }
+        list.push_back(bridge.clone());
+        let list_key = StorageKey::BridgeList;
+        env.storage().persistent().set(&list_key, &list);
+        env.storage().persistent().extend_ttl(&list_key, ttl, ttl);
+    }
+
+    pub fn get_bridge_list(env: &Env) -> Vec<Address> {
+        env.storage()
+            .persistent()
+            .get(&StorageKey::BridgeList)
+            .unwrap_or(Vec::new(env))
     }
 
     pub fn has_attestation(env: &Env, id: &String) -> bool {
@@ -708,6 +728,21 @@ impl Storage {
 }
 
 pub fn paginate(env: &Env, list: &Vec<String>, start: u32, limit: u32) -> Vec<String> {
+    let mut result = Vec::new(env);
+    let len = list.len();
+    if start >= len {
+        return result;
+    }
+    let end = (start + limit).min(len);
+    for i in start..end {
+        if let Some(item) = list.get(i) {
+            result.push_back(item);
+        }
+    }
+    result
+}
+
+pub fn paginate_addresses(env: &Env, list: &Vec<Address>, start: u32, limit: u32) -> Vec<Address> {
     let mut result = Vec::new(env);
     let len = list.len();
     if start >= len {

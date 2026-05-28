@@ -150,6 +150,11 @@ impl TrustLinkContract {
         admin::is_bridge(&env, address)
     }
 
+    #[must_use]
+    pub fn get_bridge_list(env: Env, start: u32, limit: u32) -> Vec<Address> {
+        admin::get_bridge_list(&env, start, limit)
+    }
+
     // -----------------------------------------------------------------------
     // Whitelist mode
     // -----------------------------------------------------------------------

@@ -212,6 +212,10 @@ pub fn is_bridge(env: &Env, address: Address) -> bool {
     Storage::is_bridge(env, &address)
 }
 
+pub fn get_bridge_list(env: &Env, start: u32, limit: u32) -> Vec<Address> {
+    crate::storage::paginate_addresses(env, &Storage::get_bridge_list(env), start, limit)
+}
+
 // -----------------------------------------------------------------------
 // Whitelist mode
 // -----------------------------------------------------------------------

@@ -207,6 +207,10 @@ export class TrustLinkClient {
     return this.simulate("is_bridge", this.addr(address));
   }
 
+  async getBridgeList(start: number, limit: number): Promise<string[]> {
+    return this.simulate("get_bridge_list", this.u32(start), this.u32(limit));
+  }
+
   // ── Claim Type Registry ────────────────────────────────────────────────────
 
   async getClaimTypeDescription(claimType: string): Promise<string | null> {

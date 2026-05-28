@@ -3,7 +3,7 @@ use soroban_sdk::{token::TokenClient, Address, Env, String, Vec};
 use crate::events::Events;
 use crate::storage::Storage;
 use crate::types::{
-    AdminCouncil, ClaimTypeInfo, Delegation, Error, ExpirationHook, FeeConfig, IssuerMetadata,
+    AdminCouncil, ClaimTypeInfo, ContractConfig, Delegation, Error, ExpirationHook, FeeConfig, IssuerMetadata,
     IssuerStats, IssuerTier, PendingAdminTransfer, RateLimitConfig, StorageLimits, TtlConfig,
 };
 use crate::validation::Validation;

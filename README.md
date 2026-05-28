@@ -682,6 +682,27 @@ soroban contract invoke --id <CONTRACT_ID> --network testnet --source ADMIN_SECR
   --max_attestations_per_subject 50
 ```
 
+## Storage Cost Estimates
+
+Every attestation written to the Stellar ledger consumes a base reserve (locked XLM). The table below gives issuers a quick budget reference.
+
+| Scenario | Approx. XLM reserve per attestation |
+|----------|-------------------------------------|
+| Baseline (no metadata) | ~15–16 XLM |
+| With ~200-byte metadata | ~18–20 XLM |
+| Revocation only | ~1–2 XLM |
+
+Costs are **reserve**, not fees — the XLM is locked, not burned, and is returned if the entry is evicted or deleted.
+
+Key drivers:
+- The main `Attestation` entry is ~800 bytes → ~13 XLM data reserve + 0.5 XLM entry fee.
+- Each new subject/issuer index Vec entry adds ~1 XLM.
+- Optional metadata adds ~0.5 XLM per 32 bytes.
+
+For full ledger entry size breakdown, XLM calculations, TTL/rent guidance, and bulk cost projections (10 → 10,000 attestations), see [docs/performance.md — Storage Cost Per Attestation](docs/performance.md#storage-cost-per-attestation-xlm).
+
+> Base reserve figures are based on the current Stellar network parameters (0.5 XLM per entry + 0.5 XLM per 32 bytes). Verify with `stellar network info` before budgeting for production.
+
 ## Error Handling
 
 TrustLink defines clear error types:

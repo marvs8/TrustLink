@@ -7836,4 +7836,3 @@ mod get_valid_claims_tests {
         assert_eq!(claims.get(0).unwrap(), claim_type);
     }
 }
->>>>>>> Stashed changes

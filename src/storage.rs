@@ -63,6 +63,8 @@ pub enum StorageKey {
     Delegation(Address, Address, String),
     /// Ordered list of all registered bridge contract addresses.
     BridgeList,
+    /// Per-claim-type rate limit override (claim_type -> min_issuance_interval).
+    ClaimTypeRateLimit(String),
 }
 
 fn get_ttl_lifetime(env: &Env) -> u32 {
@@ -195,10 +197,40 @@ impl Storage {
         let ttl = get_ttl_lifetime(env);
         env.storage().persistent().set(&key, &true);
         env.storage().persistent().extend_ttl(&key, ttl, ttl);
+        // Maintain ordered IssuerList
+        let mut list = Self::get_issuer_list(env);
+        for existing in list.iter() {
+            if &existing == issuer {
+                return;
+            }
+        }
+        list.push_back(issuer.clone());
+        let list_key = StorageKey::IssuerList;
+        env.storage().persistent().set(&list_key, &list);
+        env.storage().persistent().extend_ttl(&list_key, ttl, ttl);
     }
 
     pub fn remove_issuer(env: &Env, issuer: &Address) {
         env.storage().persistent().remove(&StorageKey::Issuer(issuer.clone()));
+        // Remove from IssuerList
+        let existing = Self::get_issuer_list(env);
+        let mut updated = Vec::new(env);
+        for addr in existing.iter() {
+            if &addr != issuer {
+                updated.push_back(addr);
+            }
+        }
+        let list_key = StorageKey::IssuerList;
+        let ttl = get_ttl_lifetime(env);
+        env.storage().persistent().set(&list_key, &updated);
+        env.storage().persistent().extend_ttl(&list_key, ttl, ttl);
+    }
+
+    pub fn get_issuer_list(env: &Env) -> Vec<Address> {
+        env.storage()
+            .persistent()
+            .get(&StorageKey::IssuerList)
+            .unwrap_or(Vec::new(env))
     }
 
     pub fn is_bridge(env: &Env, address: &Address) -> bool {
@@ -542,6 +574,22 @@ impl Storage {
     pub fn set_rate_limit_config(env: &Env, config: &RateLimitConfig) {
         let ttl = get_ttl_lifetime(env);
         env.storage().instance().set(&StorageKey::RateLimitConfig, config);
+        env.storage().instance().extend_ttl(ttl, ttl);
+    }
+
+    /// Get the per-claim-type rate limit override for a claim type, or None if not set.
+    pub fn get_claim_type_rate_limit(env: &Env, claim_type: &String) -> Option<u64> {
+        env.storage()
+            .instance()
+            .get(&StorageKey::ClaimTypeRateLimit(claim_type.clone()))
+    }
+
+    /// Set a per-claim-type rate limit override.
+    pub fn set_claim_type_rate_limit(env: &Env, claim_type: &String, interval_secs: u64) {
+        let ttl = get_ttl_lifetime(env);
+        env.storage()
+            .instance()
+            .set(&StorageKey::ClaimTypeRateLimit(claim_type.clone()), &interval_secs);
         env.storage().instance().extend_ttl(ttl, ttl);
     }
 

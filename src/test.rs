@@ -270,6 +270,168 @@ fn test_create_attestation_with_invalid_jurisdiction_rejected() {
 }
 
 #[test]
+fn test_jurisdiction_valid_iso_codes_accepted() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, issuer, client) = setup(&env);
+    let subject = Address::generate(&env);
+    let claim_type = String::from_str(&env, "KYC_PASSED");
+
+    // Test valid ISO 3166-1 alpha-2 codes
+    let valid_codes = vec!["US", "DE", "NG", "GB", "CA", "FR", "JP", "AU"];
+
+    for code in valid_codes {
+        let id = client.create_attestation_jurisdiction(
+            &issuer,
+            &subject,
+            &claim_type,
+            &None,
+            &None,
+            &Some(String::from_str(&env, code)),
+            &None,
+        );
+        assert!(!id.is_empty(), "valid code {} should be accepted", code);
+
+        let attestation = client.get_attestation(&id);
+        assert_eq!(attestation.jurisdiction, Some(String::from_str(&env, code)));
+    }
+}
+
+#[test]
+fn test_jurisdiction_lowercase_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, issuer, client) = setup(&env);
+    let subject = Address::generate(&env);
+    let claim_type = String::from_str(&env, "KYC_PASSED");
+
+    let result = client.try_create_attestation_jurisdiction(
+        &issuer,
+        &subject,
+        &claim_type,
+        &None,
+        &None,
+        &Some(String::from_str(&env, "us")),
+        &None,
+    );
+
+    assert_eq!(result, Err(Ok(types::Error::InvalidJurisdiction)));
+}
+
+#[test]
+fn test_jurisdiction_mixed_case_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, issuer, client) = setup(&env);
+    let subject = Address::generate(&env);
+    let claim_type = String::from_str(&env, "KYC_PASSED");
+
+    let result = client.try_create_attestation_jurisdiction(
+        &issuer,
+        &subject,
+        &claim_type,
+        &None,
+        &None,
+        &Some(String::from_str(&env, "Us")),
+        &None,
+    );
+
+    assert_eq!(result, Err(Ok(types::Error::InvalidJurisdiction)));
+}
+
+#[test]
+fn test_jurisdiction_single_character_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, issuer, client) = setup(&env);
+    let subject = Address::generate(&env);
+    let claim_type = String::from_str(&env, "KYC_PASSED");
+
+    let result = client.try_create_attestation_jurisdiction(
+        &issuer,
+        &subject,
+        &claim_type,
+        &None,
+        &None,
+        &Some(String::from_str(&env, "U")),
+        &None,
+    );
+
+    assert_eq!(result, Err(Ok(types::Error::InvalidJurisdiction)));
+}
+
+#[test]
+fn test_jurisdiction_with_numbers_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, issuer, client) = setup(&env);
+    let subject = Address::generate(&env);
+    let claim_type = String::from_str(&env, "KYC_PASSED");
+
+    let result = client.try_create_attestation_jurisdiction(
+        &issuer,
+        &subject,
+        &claim_type,
+        &None,
+        &None,
+        &Some(String::from_str(&env, "U1")),
+        &None,
+    );
+
+    assert_eq!(result, Err(Ok(types::Error::InvalidJurisdiction)));
+}
+
+#[test]
+fn test_jurisdiction_with_special_chars_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, issuer, client) = setup(&env);
+    let subject = Address::generate(&env);
+    let claim_type = String::from_str(&env, "KYC_PASSED");
+
+    let result = client.try_create_attestation_jurisdiction(
+        &issuer,
+        &subject,
+        &claim_type,
+        &None,
+        &None,
+        &Some(String::from_str(&env, "U-")),
+        &None,
+    );
+
+    assert_eq!(result, Err(Ok(types::Error::InvalidJurisdiction)));
+}
+
+#[test]
+fn test_jurisdiction_non_iso_code_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, issuer, client) = setup(&env);
+    let subject = Address::generate(&env);
+    let claim_type = String::from_str(&env, "KYC_PASSED");
+
+    // XX is not a valid ISO 3166-1 alpha-2 code
+    let result = client.try_create_attestation_jurisdiction(
+        &issuer,
+        &subject,
+        &claim_type,
+        &None,
+        &None,
+        &Some(String::from_str(&env, "XX")),
+        &None,
+    );
+
+    assert_eq!(result, Err(Ok(types::Error::InvalidJurisdiction)));
+}
+
+#[test]
 fn test_admin_can_update_fee_and_collector() {
     let env = Env::default();
     env.mock_all_auths();
@@ -7113,8 +7275,6 @@ mod chunked_index_tests {
         assert_eq!(client.get_subject_attestation_count(&subject), 80);
     }
 }
-<<<<<<< Updated upstream
-=======
 
 // =============================================================================
 // Per-claim-type rate limiting

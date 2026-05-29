@@ -614,6 +614,39 @@ switch to a backup RPC endpoint if needed.
 - **Active issuers** — track `iss_reg` minus `iss_rem` over time
 - **Multi-sig proposals pending** — `ms_prop` minus `ms_actv` backlog
 
+### Indexer Metrics
+
+The TrustLink indexer exposes Prometheus metrics for monitoring event processing:
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `trustlink_events_processed_total` | Counter | `type` | Total events processed by type |
+| `trustlink_events_failed_total` | Counter | `type` | Total events that failed to process by type |
+
+Event types tracked:
+- `created` — Attestation created
+- `imported` — Attestation imported
+- `bridged` — Attestation bridged from another chain
+- `revoked` — Attestation revoked
+- `renewed` — Attestation renewed
+- `updated` — Attestation updated
+- `expired` — Attestation expired
+- `endorsed` — Attestation endorsed
+- `iss_reg` — Issuer registered
+- `iss_tier` — Issuer tier updated
+- `iss_rem` — Issuer removed
+- `clmtype` — Claim type registered
+- `ms_prop` — Multi-sig proposed
+- `ms_sign` — Multi-sig co-signed
+- `ms_actv` — Multi-sig activated
+- `adm_init` — Admin initialized
+- `adm_xfer` — Admin transferred
+
+Example Prometheus query for revocation rate:
+```promql
+rate(trustlink_events_processed_total{type="revoked"}[5m])
+```
+
 ---
 
 ## 5. Production Checklist

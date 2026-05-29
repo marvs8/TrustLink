@@ -11,6 +11,8 @@ TypeScript SDK for the [TrustLink](https://github.com/afurious/TrustLink) on-cha
 npm install @trustlink/sdk @stellar/stellar-sdk
 ```
 
+The package is published to npm as [`@trustlink/sdk`](https://www.npmjs.com/package/@trustlink/sdk) with npm provenance attestation enabled.
+
 **Requirements:**
 - Node.js 16.0.0 or higher
 - @stellar/stellar-sdk 12.0.0 or higher
@@ -96,8 +98,12 @@ const issued = await client.getIssuerAttestations(issuer, 0, 10);
 // All valid claim IDs for a subject
 const validClaims = await client.getValidClaims(subject);
 
-// Attestations by tag
-const tagged = await client.getAttestationsByTag(subject, "premium");
+// Attestations by tag (paginated)
+const tagged = await client.getAttestationsByTag(subject, "premium");          // first 20 (default)
+const page2  = await client.getAttestationsByTag(subject, "premium", 20, 20); // next 20
+
+// Attestations by jurisdiction (paginated)
+const euAtts = await client.getAttestationsByJurisdiction(subject, "EU", 0, 10);
 
 // Audit log for an attestation
 const log = await client.getAuditLog(attestationId);
@@ -133,6 +139,15 @@ how many attestations are fetched per RPC call:
 for await (const a of client.iterateSubjectAttestations(subject, 50)) {
   // fetches 50 at a time
 }
+```
+
+Iteration stops as soon as a page returns fewer items than `pageSize` (not only
+when it returns zero). This means the generator handles mid-iteration deletions
+gracefully — it will not hang waiting for a page that will never be full.
+
+```typescript
+// iterateSubjectAttestations(subject: string, pageSize?: number): AsyncGenerator<Attestation>
+// iterateIssuerAttestations(issuer: string, pageSize?: number): AsyncGenerator<Attestation>
 ```
 
 ### Count Queries

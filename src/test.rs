@@ -8156,3 +8156,129 @@ mod get_valid_claims_tests {
         assert_eq!(claims.get(0).unwrap(), claim_type);
     }
 }
+
+// ── Issue #522: validate notify_days_before > 0 ───────────────────────────────
+
+#[test]
+fn test_register_expiration_hook_zero_days_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (_, _, client) = setup(&env);
+    let subject = Address::generate(&env);
+    let callback = Address::generate(&env);
+
+    let result = client.try_register_expiration_hook(&subject, &callback, &0);
+    assert_eq!(result, Err(Ok(crate::types::Error::InvalidExpiration)));
+}
+
+#[test]
+fn test_register_expiration_hook_nonzero_days_accepted() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (_, _, client) = setup(&env);
+    let subject = Address::generate(&env);
+    let callback = Address::generate(&env);
+
+    client.register_expiration_hook(&subject, &callback, &1);
+    let hook = client.get_expiration_hook(&subject).unwrap();
+    assert_eq!(hook.notify_days_before, 1);
+}
+
+// ── Issue #523: list_endorsements_by_endorser ─────────────────────────────────
+
+#[test]
+fn test_list_endorsements_by_endorser_returns_correct_entries() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (admin, issuer, client) = setup(&env);
+    let endorser = Address::generate(&env);
+    client.register_issuer(&admin, &endorser);
+    let subject = Address::generate(&env);
+    let claim = String::from_str(&env, "KYC_PASSED");
+
+    let id = client.create_attestation(&issuer, &subject, &claim, &None, &None, &None);
+    client.endorse_attestation(&endorser, &id);
+
+    let results = client.list_endorsements_by_endorser(&endorser, &0, &10);
+    assert_eq!(results.len(), 1);
+    assert_eq!(results.get(0).unwrap().attestation_id, id);
+}
+
+#[test]
+fn test_list_endorsements_by_endorser_empty_for_new_endorser() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (_, _, client) = setup(&env);
+    let endorser = Address::generate(&env);
+
+    let results = client.list_endorsements_by_endorser(&endorser, &0, &10);
+    assert_eq!(results.len(), 0);
+}
+
+// ── Issue #524: bulk_add_to_whitelist ─────────────────────────────────────────
+
+#[test]
+fn test_bulk_add_to_whitelist_happy_path() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (_, issuer, client) = setup(&env);
+    let s1 = Address::generate(&env);
+    let s2 = Address::generate(&env);
+    let mut subjects = soroban_sdk::Vec::new(&env);
+    subjects.push_back(s1.clone());
+    subjects.push_back(s2.clone());
+
+    client.bulk_add_to_whitelist(&issuer, &subjects);
+
+    assert!(client.is_whitelisted(&issuer, &s1));
+    assert!(client.is_whitelisted(&issuer, &s2));
+}
+
+#[test]
+fn test_bulk_add_to_whitelist_over_limit_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (_, issuer, client) = setup(&env);
+    let mut subjects = soroban_sdk::Vec::new(&env);
+    for _ in 0..51 {
+        subjects.push_back(Address::generate(&env));
+    }
+
+    let result = client.try_bulk_add_to_whitelist(&issuer, &subjects);
+    assert_eq!(result, Err(Ok(crate::types::Error::LimitExceeded)));
+}
+
+// ── Issue #525: get_admin_council ─────────────────────────────────────────────
+
+#[test]
+fn test_get_admin_council_returns_correct_list() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (_, client) = {
+        let contract_id = env.register_contract(None, TrustLinkContract);
+        let client = TrustLinkContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        client.initialize(&admin, &None);
+        (admin, client)
+    };
+
+    let council = client.get_admin_council().unwrap();
+    assert_eq!(council.len(), 1);
+}
+
+#[test]
+fn test_get_admin_council_reflects_add_and_remove() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, TrustLinkContract);
+    let client = TrustLinkContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    client.initialize(&admin, &None);
+    let new_admin = Address::generate(&env);
+
+    client.add_admin(&admin, &new_admin);
+    assert_eq!(client.get_admin_council().unwrap().len(), 2);
+
+    client.remove_admin(&admin, &new_admin);
+    assert_eq!(client.get_admin_council().unwrap().len(), 1);
+}

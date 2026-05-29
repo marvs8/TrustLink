@@ -780,6 +780,18 @@ pub fn get_endorsement_count(env: &Env, attestation_id: String) -> u32 {
     Storage::get_endorsements(env, &attestation_id).len()
 }
 
+pub fn list_endorsements_by_endorser(env: &Env, endorser: Address, start: u32, limit: u32) -> Vec<Endorsement> {
+    let all = Storage::get_endorsements_by_endorser(env, &endorser);
+    let total = all.len();
+    let start = start.min(total);
+    let end = (start + limit).min(total);
+    let mut result = Vec::new(env);
+    for i in start..end {
+        result.push_back(all.get(i).unwrap());
+    }
+    result
+}
+
 // -----------------------------------------------------------------------
 // Delegated attestation creation
 // -----------------------------------------------------------------------

@@ -30,6 +30,10 @@ use soroban_sdk::{contract, contractimpl, Address, Env, String, Vec};
 use crate::events::Events;
 use crate::storage::Storage;
 use crate::types::{
+    AdminCouncil, Attestation, AttestationRequest, AttestationStatus, AttestationTemplate,
+    AuditEntry, Endorsement, Error, ExpirationHook, FeeConfig, GlobalStats, HealthStatus,
+    IssuerMetadata, IssuerStats, IssuerTier, MultiSigProposal, PendingAdminTransfer,
+    RateLimitConfig, StorageLimits,
     Attestation, AttestationRequest, AttestationStatus, AttestationTemplate, AuditEntry, Delegation, Error,
     ExpirationHook, FeeConfig, GlobalStats, HealthStatus, IssuerMetadata, IssuerStats, IssuerTier,
     MultiSigProposal, PendingAdminTransfer, RateLimitConfig, StorageLimits,
@@ -82,6 +86,11 @@ impl TrustLinkContract {
         admin::get_admin(&env)
     }
 
+    #[must_use]
+    pub fn get_admin_council(env: Env) -> Result<AdminCouncil, Error> {
+        admin::get_admin_council(&env)
+    }
+
     // -----------------------------------------------------------------------
     // Issuer management
     // -----------------------------------------------------------------------
@@ -101,6 +110,10 @@ impl TrustLinkContract {
 
     pub fn add_to_whitelist(env: Env, issuer: Address, subject: Address) -> Result<(), Error> {
         admin::add_to_whitelist(&env, issuer, subject)
+    }
+
+    pub fn bulk_add_to_whitelist(env: Env, issuer: Address, subjects: Vec<Address>) -> Result<(), Error> {
+        admin::bulk_add_to_whitelist(&env, issuer, subjects)
     }
 
     pub fn remove_from_whitelist(env: Env, issuer: Address, subject: Address) -> Result<(), Error> {
@@ -417,6 +430,11 @@ impl TrustLinkContract {
     #[must_use]
     pub fn get_endorsement_count(env: Env, attestation_id: String) -> u32 {
         attestation::get_endorsement_count(&env, attestation_id)
+    }
+
+    #[must_use]
+    pub fn list_endorsements_by_endorser(env: Env, endorser: Address, start: u32, limit: u32) -> Vec<Endorsement> {
+        attestation::list_endorsements_by_endorser(&env, endorser, start, limit)
     }
 
     pub fn create_attestation_as_delegate(

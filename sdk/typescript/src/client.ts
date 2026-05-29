@@ -155,6 +155,10 @@ export class TrustLinkClient {
     return this.simulate("get_admin");
   }
 
+  async getAdminCouncil(): Promise<string[]> {
+    return this.simulate("get_admin_council");
+  }
+
   async getVersion(): Promise<string> {
     return this.simulate("get_version");
   }
@@ -492,6 +496,15 @@ export class TrustLinkClient {
 
   async getEndorsementCount(attestationId: string): Promise<number> {
     return this.simulate("get_endorsement_count", this.str(attestationId));
+  }
+
+  async listEndorsementsByEndorser(endorser: string, start: number, limit: number): Promise<Endorsement[]> {
+    return this.simulate("list_endorsements_by_endorser", this.addr(endorser), this.u32(start), this.u32(limit));
+  }
+
+  async bulkAddToWhitelist(issuer: string, subjects: string[]): Promise<void> {
+    const subjectsVal = xdr.ScVal.scvVec(subjects.map(s => this.addr(s)));
+    return this.simulate("bulk_add_to_whitelist", this.addr(issuer), subjectsVal);
   }
 
   // ── Pagination Helpers ─────────────────────────────────────────────────────

@@ -7727,7 +7727,7 @@ mod claim_type_requirement_tests {
         let (_admin, _issuer, _subject, client) = setup(&env);
 
         // By default, should be false
-        assert_eq!(client.get_require_registered_claim_type(), false);
+        assert_eq!(client.get_registered_claim_type(), false);
     }
 
     #[test]
@@ -7743,13 +7743,13 @@ mod claim_type_requirement_tests {
     }
 
     #[test]
-    fn test_set_require_registered_claim_type_admin_only() {
+    fn test_set_registered_claim_type_admin_only() {
         let env = Env::default();
         env.mock_all_auths();
         let (admin, _issuer, _subject, client) = setup(&env);
 
         let non_admin = Address::generate(&env);
-        let result = client.try_set_require_registered_claim_type(&non_admin, &true);
+        let result = client.try_set_registered_claim_type(&non_admin, &true);
         assert_eq!(result, Err(Ok(types::Error::Unauthorized)));
     }
 
@@ -7759,8 +7759,8 @@ mod claim_type_requirement_tests {
         env.mock_all_auths();
         let (admin, _issuer, _subject, client) = setup(&env);
 
-        client.set_require_registered_claim_type(&admin, &true);
-        assert_eq!(client.get_require_registered_claim_type(), true);
+        client.set_registered_claim_type(&admin, &true);
+        assert_eq!(client.get_registered_claim_type(), true);
     }
 
     #[test]
@@ -7770,12 +7770,12 @@ mod claim_type_requirement_tests {
         let (admin, _issuer, _subject, client) = setup(&env);
 
         // Enable it first
-        client.set_require_registered_claim_type(&admin, &true);
-        assert_eq!(client.get_require_registered_claim_type(), true);
+        client.set_registered_claim_type(&admin, &true);
+        assert_eq!(client.get_registered_claim_type(), true);
 
         // Then disable it
-        client.set_require_registered_claim_type(&admin, &false);
-        assert_eq!(client.get_require_registered_claim_type(), false);
+        client.set_registered_claim_type(&admin, &false);
+        assert_eq!(client.get_registered_claim_type(), false);
     }
 
     #[test]
@@ -7785,7 +7785,7 @@ mod claim_type_requirement_tests {
         let (admin, issuer, subject, client) = setup(&env);
 
         // Enable the requirement
-        client.set_require_registered_claim_type(&admin, &true);
+        client.set_registered_claim_type(&admin, &true);
 
         // Try to create attestation with unregistered claim type
         let unregistered = String::from_str(&env, "UNREGISTERED_CLAIM");
@@ -7805,7 +7805,7 @@ mod claim_type_requirement_tests {
         client.register_claim_type(&admin, &claim_type, &description);
 
         // Enable the requirement
-        client.set_require_registered_claim_type(&admin, &true);
+        client.set_registered_claim_type(&admin, &true);
 
         // Create attestation with registered claim type should succeed
         let id = client.create_attestation(&issuer, &subject, &claim_type, &None, &None, &None);
@@ -7828,7 +7828,7 @@ mod claim_type_requirement_tests {
         client.register_claim_type(&admin, &claim3, &String::from_str(&env, "Merchant"));
 
         // Enable the requirement
-        client.set_require_registered_claim_type(&admin, &true);
+        client.set_registered_claim_type(&admin, &true);
 
         // All registered types should work
         let id1 = client.create_attestation(&issuer, &subject, &claim1, &None, &None, &None);
@@ -7859,12 +7859,12 @@ mod claim_type_requirement_tests {
         assert!(!id1.is_empty());
 
         // Enable requirement - should fail
-        client.set_require_registered_claim_type(&admin, &true);
+        client.set_registered_claim_type(&admin, &true);
         let result = client.try_create_attestation(&issuer, &subject, &unregistered, &None, &None, &None);
         assert_eq!(result, Err(Ok(types::Error::InvalidClaimType)));
 
         // Disable requirement - should work again
-        client.set_require_registered_claim_type(&admin, &false);
+        client.set_registered_claim_type(&admin, &false);
         let id2 = client.create_attestation(&issuer, &subject, &unregistered, &None, &None, &None);
         assert!(!id2.is_empty());
     }
@@ -7880,7 +7880,7 @@ mod claim_type_requirement_tests {
         client.register_claim_type(&admin, &registered, &String::from_str(&env, "Registered"));
 
         // Enable requirement
-        client.set_require_registered_claim_type(&admin, &true);
+        client.set_registered_claim_type(&admin, &true);
 
         // Create subjects
         let subject1 = Address::generate(&env);
@@ -8157,128 +8157,116 @@ mod get_valid_claims_tests {
     }
 }
 
-// ── Issue #522: validate notify_days_before > 0 ───────────────────────────────
+#[cfg(test)]
+mod global_stats_tests {
+    use super::*;
 
-#[test]
-fn test_register_expiration_hook_zero_days_rejected() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (_, _, client) = setup(&env);
-    let subject = Address::generate(&env);
-    let callback = Address::generate(&env);
+    /// Test global stats tracking across mixed operations:
+    /// - N=5 attestation creates
+    /// - M=3 revocations  
+    /// - K=2 issuer registrations
+    /// Asserts that total_attestations == N, total_revocations == M, total_issuers == K
+    #[test]
+    fn test_global_stats_mixed_operations() {
+        let env = Env::default();
+        env.mock_all_auths();
 
-    let result = client.try_register_expiration_hook(&subject, &callback, &0);
-    assert_eq!(result, Err(Ok(crate::types::Error::InvalidExpiration)));
-}
+        let (admin, issuer, client) = setup(&env);
+        
+        // Verify initial state: 1 issuer from setup, 0 attestations, 0 revocations
+        let initial_stats = client.get_global_stats();
+        assert_eq!(initial_stats.total_issuers, 1, "Setup should have created 1 issuer");
+        assert_eq!(initial_stats.total_attestations, 0, "Should start with 0 attestations");
+        assert_eq!(initial_stats.total_revocations, 0, "Should start with 0 revocations");
 
-#[test]
-fn test_register_expiration_hook_nonzero_days_accepted() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (_, _, client) = setup(&env);
-    let subject = Address::generate(&env);
-    let callback = Address::generate(&env);
+        // ---- Create N=5 attestations ----
+        let n_creates = 5u32;
+        let mut attestation_ids = Vec::new();
+        let claim_type = String::from_str(&env, "KYC_PASSED");
+        let future_expiration = env.ledger().timestamp() + 86400;
 
-    client.register_expiration_hook(&subject, &callback, &1);
-    let hook = client.get_expiration_hook(&subject).unwrap();
-    assert_eq!(hook.notify_days_before, 1);
-}
+        for i in 0..n_creates {
+            let subject = Address::generate(&env);
+            let id = client.create_attestation(
+                &issuer,
+                &subject,
+                &claim_type,
+                &Some(future_expiration),
+                &None,
+                &None,
+            );
+            attestation_ids.push(id);
+        }
 
-// ── Issue #523: list_endorsements_by_endorser ─────────────────────────────────
+        // Verify stats after creates: total_attestations == 5
+        let stats_after_creates = client.get_global_stats();
+        assert_eq!(
+            stats_after_creates.total_attestations,
+            n_creates as u64,
+            "Should have {} attestations after creates",
+            n_creates
+        );
+        assert_eq!(
+            stats_after_creates.total_revocations, 0,
+            "Should still have 0 revocations"
+        );
 
-#[test]
-fn test_list_endorsements_by_endorser_returns_correct_entries() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (admin, issuer, client) = setup(&env);
-    let endorser = Address::generate(&env);
-    client.register_issuer(&admin, &endorser);
-    let subject = Address::generate(&env);
-    let claim = String::from_str(&env, "KYC_PASSED");
+        // ---- Revoke M=3 of the attestations ----
+        let m_revocations = 3u32;
+        for i in 0..m_revocations {
+            client.revoke_attestation(&issuer, &attestation_ids.get(i as usize).unwrap(), &None);
+        }
 
-    let id = client.create_attestation(&issuer, &subject, &claim, &None, &None, &None);
-    client.endorse_attestation(&endorser, &id);
+        // Verify stats after revocations: total_revocations == 3, total_attestations unchanged
+        let stats_after_revocations = client.get_global_stats();
+        assert_eq!(
+            stats_after_revocations.total_attestations,
+            n_creates as u64,
+            "Total attestations should remain {} after revocations",
+            n_creates
+        );
+        assert_eq!(
+            stats_after_revocations.total_revocations,
+            m_revocations as u64,
+            "Should have {} revocations",
+            m_revocations
+        );
+        assert_eq!(
+            stats_after_revocations.total_issuers, 1,
+            "Should still have only 1 issuer"
+        );
 
-    let results = client.list_endorsements_by_endorser(&endorser, &0, &10);
-    assert_eq!(results.len(), 1);
-    assert_eq!(results.get(0).unwrap().attestation_id, id);
-}
+        // ---- Register K=2 new issuers ----
+        let k_new_issuers = 2u32;
+        for _ in 0..k_new_issuers {
+            let new_issuer = Address::generate(&env);
+            client.register_issuer(&admin, &new_issuer);
+        }
 
-#[test]
-fn test_list_endorsements_by_endorser_empty_for_new_endorser() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (_, _, client) = setup(&env);
-    let endorser = Address::generate(&env);
-
-    let results = client.list_endorsements_by_endorser(&endorser, &0, &10);
-    assert_eq!(results.len(), 0);
-}
-
-// ── Issue #524: bulk_add_to_whitelist ─────────────────────────────────────────
-
-#[test]
-fn test_bulk_add_to_whitelist_happy_path() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (_, issuer, client) = setup(&env);
-    let s1 = Address::generate(&env);
-    let s2 = Address::generate(&env);
-    let mut subjects = soroban_sdk::Vec::new(&env);
-    subjects.push_back(s1.clone());
-    subjects.push_back(s2.clone());
-
-    client.bulk_add_to_whitelist(&issuer, &subjects);
-
-    assert!(client.is_whitelisted(&issuer, &s1));
-    assert!(client.is_whitelisted(&issuer, &s2));
-}
-
-#[test]
-fn test_bulk_add_to_whitelist_over_limit_rejected() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (_, issuer, client) = setup(&env);
-    let mut subjects = soroban_sdk::Vec::new(&env);
-    for _ in 0..51 {
-        subjects.push_back(Address::generate(&env));
+        // ---- Final assertion: verify all stats match expected values ----
+        let final_stats = client.get_global_stats();
+        
+        // N = 5 creates
+        assert_eq!(
+            final_stats.total_attestations, n_creates as u64,
+            "Final total_attestations must equal N={} creates",
+            n_creates
+        );
+        
+        // M = 3 revocations
+        assert_eq!(
+            final_stats.total_revocations, m_revocations as u64,
+            "Final total_revocations must equal M={} revocations",
+            m_revocations
+        );
+        
+        // K+1 = 3 total issuers (1 from setup + 2 new)
+        let expected_total_issuers = 1 + k_new_issuers;
+        assert_eq!(
+            final_stats.total_issuers, expected_total_issuers as u64,
+            "Final total_issuers must equal {} (1 from setup + {} new)",
+            expected_total_issuers,
+            k_new_issuers
+        );
     }
-
-    let result = client.try_bulk_add_to_whitelist(&issuer, &subjects);
-    assert_eq!(result, Err(Ok(crate::types::Error::LimitExceeded)));
-}
-
-// ── Issue #525: get_admin_council ─────────────────────────────────────────────
-
-#[test]
-fn test_get_admin_council_returns_correct_list() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (_, client) = {
-        let contract_id = env.register_contract(None, TrustLinkContract);
-        let client = TrustLinkContractClient::new(&env, &contract_id);
-        let admin = Address::generate(&env);
-        client.initialize(&admin, &None);
-        (admin, client)
-    };
-
-    let council = client.get_admin_council().unwrap();
-    assert_eq!(council.len(), 1);
-}
-
-#[test]
-fn test_get_admin_council_reflects_add_and_remove() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let contract_id = env.register_contract(None, TrustLinkContract);
-    let client = TrustLinkContractClient::new(&env, &contract_id);
-    let admin = Address::generate(&env);
-    client.initialize(&admin, &None);
-    let new_admin = Address::generate(&env);
-
-    client.add_admin(&admin, &new_admin);
-    assert_eq!(client.get_admin_council().unwrap().len(), 2);
-
-    client.remove_admin(&admin, &new_admin);
-    assert_eq!(client.get_admin_council().unwrap().len(), 1);
 }

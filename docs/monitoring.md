@@ -537,6 +537,74 @@ RPC_URL=https://soroban-testnet.stellar.org \
 }
 ```
 
+### Prometheus Alerting Rules
+
+Ready-to-use Prometheus alerting rules are provided in
+[`monitoring/alerts.yml`](../monitoring/alerts.yml). Load the file into your
+Prometheus configuration:
+
+```yaml
+# prometheus.yml
+rule_files:
+  - "monitoring/alerts.yml"
+```
+
+The file defines one alert group (`trustlink`) with four rules. Each rule
+requires the following metrics to be exported by your TrustLink event indexer:
+
+| Metric | Type | Description |
+|---|---|---|
+| `trustlink_contract_paused` | Gauge | `1` when the contract is paused, `0` otherwise |
+| `trustlink_issuer_removed_total` | Counter | Cumulative count of `iss_rem` events |
+| `trustlink_attestation_revoked_total` | Counter | Cumulative count of `revoked` events |
+| `trustlink_latest_ledger` | Gauge | Current chain tip ledger sequence |
+| `trustlink_indexer_last_processed_ledger` | Gauge | Last ledger processed by the indexer |
+
+#### `TrustLinkContractPaused`
+
+**Severity:** Critical  
+**Condition:** `trustlink_contract_paused == 1`
+
+Fires immediately when the contract is paused via `pause()`. All attestation
+write operations are halted while the contract is paused. Verify the pause was
+an intentional admin action (e.g. incident response) and call `unpause()` once
+the threat is contained.
+
+#### `TrustLinkIssuerRemoved`
+
+**Severity:** Critical  
+**Condition:** Any `iss_rem` event in the last 5 minutes
+
+Fires when an issuer is removed from the registry. Existing attestations from
+the removed issuer remain valid but no new ones can be created, and the issuer
+can no longer revoke their own attestations. Confirm the removal was intentional
+and assess whether affected attestations need to be transferred to a successor
+issuer via `transfer_attestation`.
+
+#### `TrustLinkHighRevocationRate`
+
+**Severity:** High  
+**Condition:** More than 10 `revoked` events in any 5-minute window
+
+A revocation spike may indicate a compromised issuer key, a bulk compliance
+action (e.g. sanctions list update), or a bug in issuer automation. Follow the
+runbook in [Section 8](#8-investigating-a-spike-in-revocations) to determine
+the root cause. Adjust the threshold (`> 10`) to match your expected baseline
+traffic after one week of observation.
+
+#### `TrustLinkIndexerLag`
+
+**Severity:** High  
+**Condition:** Indexer more than 100 ledgers behind the chain tip for 2 minutes
+
+When the indexer lags, all event-based alerts become unreliable — revocation
+spikes, issuer removals, and bridge anomalies may go undetected. Check that the
+indexer process is running, verify RPC connectivity (see the
+[`no_events_received` runbook](#no_events_received--monitor-silence)), and
+switch to a backup RPC endpoint if needed.
+
+---
+
 ### Dashboard Metrics to Track
 
 - **Attestations created per hour** — baseline for normal activity

@@ -7996,3 +7996,117 @@ mod get_valid_claims_tests {
         assert_eq!(claims.get(0).unwrap(), claim_type);
     }
 }
+
+#[cfg(test)]
+mod global_stats_tests {
+    use super::*;
+
+    /// Test global stats tracking across mixed operations:
+    /// - N=5 attestation creates
+    /// - M=3 revocations  
+    /// - K=2 issuer registrations
+    /// Asserts that total_attestations == N, total_revocations == M, total_issuers == K
+    #[test]
+    fn test_global_stats_mixed_operations() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let (admin, issuer, client) = setup(&env);
+        
+        // Verify initial state: 1 issuer from setup, 0 attestations, 0 revocations
+        let initial_stats = client.get_global_stats();
+        assert_eq!(initial_stats.total_issuers, 1, "Setup should have created 1 issuer");
+        assert_eq!(initial_stats.total_attestations, 0, "Should start with 0 attestations");
+        assert_eq!(initial_stats.total_revocations, 0, "Should start with 0 revocations");
+
+        // ---- Create N=5 attestations ----
+        let n_creates = 5u32;
+        let mut attestation_ids = Vec::new();
+        let claim_type = String::from_str(&env, "KYC_PASSED");
+        let future_expiration = env.ledger().timestamp() + 86400;
+
+        for i in 0..n_creates {
+            let subject = Address::generate(&env);
+            let id = client.create_attestation(
+                &issuer,
+                &subject,
+                &claim_type,
+                &Some(future_expiration),
+                &None,
+                &None,
+            );
+            attestation_ids.push(id);
+        }
+
+        // Verify stats after creates: total_attestations == 5
+        let stats_after_creates = client.get_global_stats();
+        assert_eq!(
+            stats_after_creates.total_attestations,
+            n_creates as u64,
+            "Should have {} attestations after creates",
+            n_creates
+        );
+        assert_eq!(
+            stats_after_creates.total_revocations, 0,
+            "Should still have 0 revocations"
+        );
+
+        // ---- Revoke M=3 of the attestations ----
+        let m_revocations = 3u32;
+        for i in 0..m_revocations {
+            client.revoke_attestation(&issuer, &attestation_ids.get(i as usize).unwrap(), &None);
+        }
+
+        // Verify stats after revocations: total_revocations == 3, total_attestations unchanged
+        let stats_after_revocations = client.get_global_stats();
+        assert_eq!(
+            stats_after_revocations.total_attestations,
+            n_creates as u64,
+            "Total attestations should remain {} after revocations",
+            n_creates
+        );
+        assert_eq!(
+            stats_after_revocations.total_revocations,
+            m_revocations as u64,
+            "Should have {} revocations",
+            m_revocations
+        );
+        assert_eq!(
+            stats_after_revocations.total_issuers, 1,
+            "Should still have only 1 issuer"
+        );
+
+        // ---- Register K=2 new issuers ----
+        let k_new_issuers = 2u32;
+        for _ in 0..k_new_issuers {
+            let new_issuer = Address::generate(&env);
+            client.register_issuer(&admin, &new_issuer);
+        }
+
+        // ---- Final assertion: verify all stats match expected values ----
+        let final_stats = client.get_global_stats();
+        
+        // N = 5 creates
+        assert_eq!(
+            final_stats.total_attestations, n_creates as u64,
+            "Final total_attestations must equal N={} creates",
+            n_creates
+        );
+        
+        // M = 3 revocations
+        assert_eq!(
+            final_stats.total_revocations, m_revocations as u64,
+            "Final total_revocations must equal M={} revocations",
+            m_revocations
+        );
+        
+        // K+1 = 3 total issuers (1 from setup + 2 new)
+        let expected_total_issuers = 1 + k_new_issuers;
+        assert_eq!(
+            final_stats.total_issuers, expected_total_issuers as u64,
+            "Final total_issuers must equal {} (1 from setup + {} new)",
+            expected_total_issuers,
+            k_new_issuers
+        );
+    }
+}

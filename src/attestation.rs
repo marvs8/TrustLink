@@ -83,8 +83,9 @@ pub fn validate_jurisdiction(env: &Env, jurisdiction: &Option<String>) -> Result
         }
         
         // Must be exactly 2 uppercase ASCII letters (A-Z)
-        let bytes = code.as_bytes();
-        if bytes.len() != 2 || !bytes.iter().all(|&b| b >= b'A' && b <= b'Z') {
+        let mut buf = [0u8; 2];
+        code.copy_into_slice(&mut buf);
+        if !buf.iter().all(|&b| b >= b'A' && b <= b'Z') {
             return Err(Error::InvalidJurisdiction);
         }
         

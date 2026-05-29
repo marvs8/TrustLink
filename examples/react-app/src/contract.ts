@@ -277,3 +277,16 @@ export async function getExpiringAttestations(
     nativeToScVal(50, { type: "u32" })
   );
 }
+
+export async function getIssuerAttestations(
+  issuer: string,
+  start: number,
+  limit: number
+): Promise<Attestation[]> {
+  return simulate(
+    "get_issuer_attestations",
+    addr(issuer),
+    nativeToScVal(start, { type: "u32" }),
+    nativeToScVal(limit, { type: "u32" })
+  );
+}

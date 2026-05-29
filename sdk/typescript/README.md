@@ -11,6 +11,8 @@ TypeScript SDK for the [TrustLink](https://github.com/afurious/TrustLink) on-cha
 npm install @trustlink/sdk @stellar/stellar-sdk
 ```
 
+The package is published to npm as [`@trustlink/sdk`](https://www.npmjs.com/package/@trustlink/sdk) with npm provenance attestation enabled.
+
 **Requirements:**
 - Node.js 16.0.0 or higher
 - @stellar/stellar-sdk 12.0.0 or higher
@@ -137,6 +139,15 @@ how many attestations are fetched per RPC call:
 for await (const a of client.iterateSubjectAttestations(subject, 50)) {
   // fetches 50 at a time
 }
+```
+
+Iteration stops as soon as a page returns fewer items than `pageSize` (not only
+when it returns zero). This means the generator handles mid-iteration deletions
+gracefully — it will not hang waiting for a page that will never be full.
+
+```typescript
+// iterateSubjectAttestations(subject: string, pageSize?: number): AsyncGenerator<Attestation>
+// iterateIssuerAttestations(issuer: string, pageSize?: number): AsyncGenerator<Attestation>
 ```
 
 ### Count Queries

@@ -78,8 +78,14 @@ export class TrustLinkClient {
 
     this.server = new SorobanRpc.Server(this.rpcUrl, { allowHttp: true });
     this.contract = new Contract(contractId);
-    this.retryOptions = options.retry ?? {};
-    this.breaker = new CircuitBreaker(options.circuitBreaker ?? {});
+    const res = options.resilience ?? {};
+    this.retryOptions = options.retry ?? {
+      maxAttempts: res.maxRetries,
+      initialDelayMs: res.backoffMs,
+    };
+    this.breaker = new CircuitBreaker(options.circuitBreaker ?? {
+      failureThreshold: res.circuitBreakerThreshold,
+    });
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────

@@ -303,4 +303,6 @@ export interface TrustLinkClientOptions {
   retry?: import("./resilience").RetryOptions;
   /** Optional: circuit breaker configuration. */
   circuitBreaker?: import("./resilience").CircuitBreakerOptions;
+  /** Optional: simplified resilience config (maxRetries, backoffMs, circuitBreakerThreshold). */
+  resilience?: import("./resilience").ResilienceConfig;
 }

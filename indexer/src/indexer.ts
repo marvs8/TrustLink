@@ -6,6 +6,9 @@ import {
   revocationsTotal,
   eventsProcessedTotal,
   indexerLagLedgers,
+  incrementEventProcessed,
+  incrementEventFailed,
+  EventTypes,
 } from "./metrics";
 import { dispatchWebhooks } from "./webhooks";
 
@@ -75,12 +78,22 @@ async function processRange(
       });
 
       for (const ev of response.events) {
+        const topicStr = ev.topic[0] ? scValToNative(ev.topic[0]) as string : "unknown";
         try {
           await handleEvent(db, ev);
           processedCount++;
+          // Track by event type
+          const eventType = normalizeEventType(topicStr);
+          if (eventType) {
+            incrementEventProcessed(eventType);
+          }
         } catch (err) {
           console.error(`Error processing event at ledger ${ev.ledger}:`, err);
           // Continue processing other events
+          const eventType = normalizeEventType(topicStr);
+          if (eventType) {
+            incrementEventFailed(eventType);
+          }
         }
       }
 
@@ -260,4 +273,28 @@ async function handleEvent(
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+// Map raw event topics to normalized event type labels
+function normalizeEventType(topic: string): string | null {
+  const mapping: Record<string, string> = {
+    "created": EventTypes.CREATED,
+    "imported": EventTypes.IMPORTED,
+    "bridged": EventTypes.BRIDGED,
+    "revoked": EventTypes.REVOKED,
+    "renewed": EventTypes.RENEWED,
+    "updated": EventTypes.UPDATED,
+    "expired": EventTypes.EXPIRED,
+    "endorsed": EventTypes.ENDORSED,
+    "iss_reg": EventTypes.ISSUER_REGISTERED,
+    "iss_tier": EventTypes.ISSUER_TIER,
+    "iss_rem": EventTypes.ISSUER_REMOVED,
+    "clmtype": EventTypes.CLAIM_TYPE,
+    "ms_prop": EventTypes.MULTISIG_PROPOSED,
+    "ms_sign": EventTypes.MULTISIG_COSIGNED,
+    "ms_actv": EventTypes.MULTISIG_ACTIVATED,
+    "adm_init": EventTypes.ADMIN_INIT,
+    "adm_xfer": EventTypes.ADMIN_TRANSFER,
+  };
+  return mapping[topic] ?? null;
 }

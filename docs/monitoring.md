@@ -731,7 +731,77 @@ curl -s ... | jq '[.result.events[].topic[1]] | unique'
 
 ---
 
-## 9. Detecting and Responding to Storage Exhaustion
+## 9. Grafana Dashboard
+
+A pre-built Grafana dashboard is provided at [`monitoring/grafana-dashboard.json`](../monitoring/grafana-dashboard.json). It includes five panels:
+
+| Panel | Type | What it shows |
+|---|---|---|
+| **Total Attestations Over Time** | Time series | Cumulative `trustlink_attestations_total` counter |
+| **Revocation Rate** | Time series | `rate(trustlink_revocations_total[$__rate_interval])` — spikes indicate bulk revocations |
+| **Active Issuers** | Stat | Current value of `trustlink_active_issuers` |
+| **Indexer Lag** | Gauge | `trustlink_indexer_lag_ledgers` — ledgers the indexer is behind the chain tip |
+| **Webhook Delivery Success Rate** | Time series | Ratio of `trustlink_webhook_deliveries_success_total` to total deliveries |
+
+### Prerequisites
+
+- Grafana 10.0+ with a **Prometheus** datasource configured and named `Prometheus`.
+- Your TrustLink indexer exposes the metrics listed above on a `/metrics` endpoint that Prometheus scrapes.
+
+### Importing the dashboard
+
+**Via the Grafana UI:**
+
+1. Open Grafana and go to **Dashboards → Import** (or navigate to `/dashboard/import`).
+2. Click **Upload dashboard JSON file** and select `monitoring/grafana-dashboard.json`.
+3. In the **Prometheus** dropdown, select your Prometheus datasource.
+4. Click **Import**.
+
+**Via the Grafana HTTP API:**
+
+```bash
+# Replace <GRAFANA_URL>, <USER>, and <PASSWORD> with your values
+curl -s -X POST \
+  -H "Content-Type: application/json" \
+  -u "<USER>:<PASSWORD>" \
+  --data-binary @monitoring/grafana-dashboard.json \
+  "<GRAFANA_URL>/api/dashboards/import"
+```
+
+**Via Grafana provisioning (GitOps):**
+
+Copy the file into your Grafana provisioning directory and add a provider config:
+
+```yaml
+# grafana/provisioning/dashboards/trustlink.yaml
+apiVersion: 1
+providers:
+  - name: TrustLink
+    folder: TrustLink
+    type: file
+    options:
+      path: /etc/grafana/dashboards/trustlink
+```
+
+```bash
+cp monitoring/grafana-dashboard.json /etc/grafana/dashboards/trustlink/
+# Grafana picks up the file automatically on the next provisioning cycle (default: 10 s)
+```
+
+### Metric names reference
+
+| Metric | Type | Description |
+|---|---|---|
+| `trustlink_attestations_total` | Counter | All attestations ever created |
+| `trustlink_revocations_total` | Counter | All revocations ever performed |
+| `trustlink_active_issuers` | Gauge | Current registered issuer count |
+| `trustlink_indexer_lag_ledgers` | Gauge | Ledgers the indexer is behind the chain tip |
+| `trustlink_webhook_deliveries_success_total` | Counter | Webhook calls that returned HTTP 2xx |
+| `trustlink_webhook_deliveries_failure_total` | Counter | Webhook calls that failed or timed out |
+
+---
+
+## 10. Detecting and Responding to Storage Exhaustion
 
 TrustLink enforces per-issuer and per-subject attestation limits
 (`max_attestations_per_issuer`, `max_attestations_per_subject`). When a limit

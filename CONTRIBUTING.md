@@ -9,8 +9,17 @@ TrustLink uses [pre-commit](https://pre-commit.com) to enforce formatting and li
 **Install the hooks once after cloning:**
 
 ```bash
-pip install pre-commit   # or: brew install pre-commit
-pre-commit install
+# Install pre-commit (choose one method):
+pip install --user pre-commit   # or: brew install pre-commit
+
+# Ensure Rust tooling is available for the hooks:
+rustup component add rustfmt clippy
+
+# Install the git hooks (and fetch any hook dependencies):
+pre-commit install --install-hooks
+
+# Verify hooks run cleanly now:
+pre-commit run --all-files
 ```
 
 After that, every `git commit` automatically runs:

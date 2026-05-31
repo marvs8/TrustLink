@@ -18,7 +18,7 @@ const START_LEDGER = process.env.START_LEDGER ? parseInt(process.env.START_LEDGE
 const PAGE_LIMIT = 200;
 const POLL_MS = 5_000;
 
-const WATCHED = new Set(["created", "revoked", "imported", "bridged", "ms_prop", "ms_sign", "ms_actv", "iss_reg", "issuer_tier_updated"]);
+const WATCHED = new Set(["created", "revoked", "imported", "bridged", "ms_prop", "ms_sign", "ms_actv", "iss_reg", "issuer_tier_updated", "att_req", "req_ful", "req_rej"]);
 
 let lastLedger = 0;
 
@@ -226,6 +226,47 @@ async function handleEvent(
       data: { finalized: true },
     });
     attestationsTotal.inc();
+    return;
+  }
+
+  if (topicStr === "att_req") {
+    // topics: ["att_req", subject_address]  data: (request_id, issuer, claim_type, requested_at, expires_at)
+    const subject = ev.topic[1] ? String(scValToNative(ev.topic[1])) : "";
+    const [requestId, issuer, claimType, rawRequestedAt, rawExpiresAt] = data as [string, string, string, bigint | number, bigint | number];
+    await db.attestationRequest.upsert({
+      where: { id: String(requestId) },
+      update: {},
+      create: {
+        id: String(requestId),
+        subject,
+        issuer: String(issuer),
+        claimType: String(claimType),
+        requestedAt: BigInt(rawRequestedAt),
+        expiresAt: BigInt(rawExpiresAt),
+        status: "PENDING",
+      },
+    });
+    return;
+  }
+
+  if (topicStr === "req_ful") {
+    // topics: ["req_ful", issuer_address]  data: (request_id, attestation_id)
+    const [requestId, attestationId] = data as [string, string];
+    await db.attestationRequest.updateMany({
+      where: { id: String(requestId), status: "PENDING" },
+      data: { status: "FULFILLED", fulfillmentId: String(attestationId) },
+    });
+    return;
+  }
+
+  if (topicStr === "req_rej") {
+    // topics: ["req_rej", issuer_address]  data: (request_id, rejection_reason?)
+    const [requestId, rawReason] = data as [string, string | null | undefined];
+    const rejectionReason = rawReason != null ? String(rawReason) : null;
+    await db.attestationRequest.updateMany({
+      where: { id: String(requestId), status: "PENDING" },
+      data: { status: "REJECTED", rejectionReason },
+    });
     return;
   }
 

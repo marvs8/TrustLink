@@ -75,3 +75,29 @@ model Issuer {
 
   @@index([tier])
 }
+
+enum RequestStatus {
+  PENDING
+  FULFILLED
+  REJECTED
+}
+
+model AttestationRequest {
+  id              String        @id           // deterministic hash ID from the contract
+  subject         String
+  issuer          String
+  claimType       String
+  requestedAt     BigInt
+  expiresAt       BigInt
+  status          RequestStatus @default(PENDING)
+  fulfillmentId   String?                     // attestation ID when fulfilled
+  rejectionReason String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([issuer])
+  @@index([subject])
+  @@index([status])
+  @@index([issuer, status])
+  @@map("attestation_requests")
+}
